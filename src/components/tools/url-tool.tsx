@@ -2,11 +2,13 @@
 
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useTools } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState, useCallback, useEffect, useRef } from "react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import {
   Copy,
@@ -17,6 +19,7 @@ import {
   Settings2,
   RefreshCw,
   Link,
+  Heart
 } from "lucide-react";
 
 // ─── Encoding/Decoding Core Logic ─────────────────────────────────────────────
@@ -38,18 +41,13 @@ function encodeText(text: string, settings: UrlSettings): string {
     result = encodeURI(text);
   }
 
-  // RFC 3986 Strict Encoding
-  // encodeURIComponent and encodeURI do not escape: ! ' ( ) *
   if (settings.rfc3986) {
     result = result.replace(/[!'()*]/g, (c) => {
       return "%" + c.charCodeAt(0).toString(16).toUpperCase();
     });
   }
 
-  // Handle Space encoding
   if (settings.spaceAsPlus) {
-    // Standard URL encoding converts spaces to %20.
-    // If spaces should be encoded as +, we replace all %20 with +
     result = result.replace(/%20/g, "+");
   }
 
@@ -61,8 +59,6 @@ function decodeText(text: string, settings: UrlSettings): string {
 
   let temp = text;
   if (settings.spaceAsPlus) {
-    // If space as plus is active, plus signs decode to spaces.
-    // We replace + with %20 before decoding.
     temp = temp.replace(/\+/g, "%20");
   }
 
@@ -71,6 +67,24 @@ function decodeText(text: string, settings: UrlSettings): string {
   } else {
     return decodeURI(temp);
   }
+}
+
+// ─── FavoriteButton Helper ───────────────────────────────────────────────────
+
+function FavoriteButton({ toolId }: { toolId: string }) {
+  const { favorites, toggleFavorite } = useTools();
+  const isFav = favorites.includes(toolId);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all"
+      onClick={() => toggleFavorite(toolId)}
+      aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
+    >
+      <Heart className={cn("h-5 w-5 transition-all", isFav ? "fill-red-500 text-red-500 scale-110" : "scale-100")} />
+    </Button>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -86,19 +100,16 @@ export function UrlTool() {
     autoProcess: true,
   });
 
-  // We keep a state for manually triggered values
   const [manualState, setManualState] = useState<{
     input: string;
     mode: "encode" | "decode";
     settings: UrlSettings;
   } | null>(null);
 
-  // Decide which source values to use for the actual encoding/decoding calculation
   const activeInput = settings.autoProcess ? input : (manualState?.input ?? "");
   const activeMode = settings.autoProcess ? mode : (manualState?.mode ?? "encode");
   const activeSettings = settings.autoProcess ? settings : (manualState?.settings ?? settings);
 
-  // Compute output and error during render!
   let output = "";
   let error: string | null = null;
 
@@ -116,7 +127,6 @@ export function UrlTool() {
     }
   }
 
-  // Store latest states in a ref to keep callbacks stable with empty dependencies
   const latestRef = useRef({ mode, input, output, settings, manualState });
   useEffect(() => {
     latestRef.current = { mode, input, output, settings, manualState };
@@ -125,8 +135,6 @@ export function UrlTool() {
   const triggerManualProcess = () => {
     setManualState({ input, mode, settings });
   };
-
-  // ─── Swap Action ────────────────────────────────────────────────────────────
 
   const handleSwap = useCallback(() => {
     const { mode: currentMode, output: currentOutput, settings: currentSettings, manualState: currentManualState } = latestRef.current;
@@ -146,8 +154,6 @@ export function UrlTool() {
     toast.success(`Swapped text and switched to ${nextMode} mode`);
   }, []);
 
-  // ─── Copy Action ────────────────────────────────────────────────────────────
-
   const handleCopy = useCallback(() => {
     const { output: currentOutput } = latestRef.current;
     if (!currentOutput) {
@@ -160,15 +166,11 @@ export function UrlTool() {
       .catch(() => toast.error("Failed to copy to clipboard"));
   }, []);
 
-  // ─── Clear Action ───────────────────────────────────────────────────────────
-
   const handleClear = useCallback(() => {
     setInput("");
     setManualState(null);
     toast.success("Cleared inputs");
   }, []);
-
-  // ─── Keyboard Shortcuts Listener ───────────────────────────────────────────
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -190,8 +192,6 @@ export function UrlTool() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleSwap, handleCopy, handleClear]);
-
-  // ─── Round-trip Validation Checker ──────────────────────────────────────────
 
   const checkRoundTrip = (): { valid: boolean; type: "exact" | "semantic" | "none"; reason?: string } => {
     if (!input || !output || error) return { valid: false, type: "none" };
@@ -224,136 +224,176 @@ export function UrlTool() {
 
   const roundTrip = checkRoundTrip();
 
-  // Character statistics
   const inputLen = input.length;
   const outputLen = output.length;
   const sizeDiff = outputLen - inputLen;
   const sizePercent = inputLen > 0 ? Math.round((sizeDiff / inputLen) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-6 p-6 bg-card rounded-xl border border-border shadow-sm max-w-6xl mx-auto animate-in fade-in duration-300">
+    <div className="card-premium p-6 md:p-8 space-y-8 animate-slide-up max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-border">
-        <div>
-          <h3 className="font-semibold text-xl tracking-tight flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
-              <Link className="h-5 w-5" />
-            </span>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Link className="h-5 w-5 text-muted-foreground" />
             URL Encoder / Decoder
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1">
+          </h1>
+          <p className="text-sm text-muted-foreground">
             Encode and decode URL parameters safely with configurable RFC 3986 compliance.
           </p>
         </div>
+        <FavoriteButton toolId="url-tool" />
+      </div>
 
-        {/* Mode Switcher */}
-        <div className="flex rounded-lg bg-muted p-1 border border-border self-stretch md:self-auto">
-          <button
-            onClick={() => setMode("encode")}
-            aria-label="Switch to Encode mode"
-            className={cn(
-              "px-4 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer",
-              mode === "encode"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
+      {/* Settings / Mode Switcher */}
+      <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Operation
+            </span>
+            <Tabs value={mode} onValueChange={(val) => setMode(val as "encode" | "decode")} className="w-auto">
+              <TabsList className="bg-muted p-1 rounded-xl h-9">
+                <TabsTrigger value="encode" className="text-xs rounded-lg px-4 h-7 cursor-pointer transition-all">
+                  Encode URL
+                </TabsTrigger>
+                <TabsTrigger value="decode" className="text-xs rounded-lg px-4 h-7 cursor-pointer transition-all">
+                  Decode URL
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {!settings.autoProcess && (
+              <Button
+                onClick={triggerManualProcess}
+                className="h-9 rounded-full text-xs font-semibold cursor-pointer active:scale-95 transition-all shadow-sm"
+                aria-label="Trigger manual URL conversion"
+              >
+                <RefreshCw className="h-4 w-4 mr-1.5" />
+                Process URL
+              </Button>
             )}
-          >
-            Encode
-          </button>
-          <button
-            onClick={() => setMode("decode")}
-            aria-label="Switch to Decode mode"
-            className={cn(
-              "px-4 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer",
-              mode === "decode"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Decode
-          </button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSwap}
+              disabled={!output && !input}
+              className="h-9 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
+              aria-label="Swap input and output values and switch mode"
+            >
+              <ArrowLeftRight className="h-4 w-4" />
+              Swap Panels
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopy}
+              disabled={!output || !!error}
+              className="h-9 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
+              aria-label="Copy output text to clipboard"
+            >
+              <Copy className="h-4 w-4" />
+              Copy Output
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClear}
+              disabled={!input && !output}
+              className="h-9 rounded-xl text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-card cursor-pointer active:scale-95 transition-all"
+              aria-label="Clear all inputs and outputs"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Workspace Grid */}
+      {/* Workspace Split Textareas */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Input Panel */}
         <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <label htmlFor="url-input" className="text-sm font-semibold tracking-wide text-foreground uppercase">
-              Input Text
-            </label>
+          <div className="flex justify-between items-center px-1">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Input URL Text
+            </span>
             {inputLen > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {inputLen} character{inputLen !== 1 && "s"}
+              <span className="text-xs text-muted-foreground font-mono">
+                {inputLen} chars
               </span>
             )}
           </div>
-          <Textarea
-            id="url-input"
-            placeholder={
-              mode === "encode"
-                ? "Enter text or URL query parameters to encode (e.g., hello world! & welcome)"
-                : "Enter percent-encoded URL text to decode (e.g., hello%20world%21%20%26%20welcome)"
-            }
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            className="min-h-55 font-mono text-sm resize-y"
-            aria-label={mode === "encode" ? "URL input text to encode" : "URL input text to decode"}
-          />
+          <div className="relative rounded-xl border border-border focus-within:border-primary/45 focus-within:ring-1 focus-within:ring-primary/20 transition-all overflow-hidden bg-card">
+            <Textarea
+              id="url-input"
+              placeholder={
+                mode === "encode"
+                  ? "Enter text or URL query parameters to encode (e.g. key=value & spaces inside)"
+                  : "Enter percent-encoded URL text to decode (e.g. key%3Dvalue%20%26%20spaces%20inside)"
+              }
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              className="min-h-55 resize-none border-0 font-mono text-sm leading-relaxed bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none p-4"
+              aria-label={mode === "encode" ? "URL input text to encode" : "URL input text to decode"}
+            />
+          </div>
         </div>
 
         {/* Output Panel */}
         <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <label htmlFor="url-output" className="text-sm font-semibold tracking-wide text-foreground uppercase">
-              Output Text
-            </label>
+          <div className="flex justify-between items-center px-1">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Converted Output
+            </span>
             {outputLen > 0 && (
-              <span className="text-xs text-muted-foreground animate-in fade-in">
-                {outputLen} character{outputLen !== 1 && "s"}
+              <span className="text-xs text-muted-foreground font-mono animate-in fade-in">
+                {outputLen} chars
                 {sizeDiff !== 0 && (
-                  <span className={cn("ml-1 font-medium", sizeDiff > 0 ? "text-amber-500" : "text-emerald-500")}>
+                  <span className={cn("ml-1 font-semibold", sizeDiff > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-700 dark:text-emerald-400")}>
                     ({sizeDiff > 0 ? `+${sizeDiff}` : sizeDiff} chars, {sizePercent > 0 ? `+${sizePercent}` : sizePercent}%)
                   </span>
                 )}
               </span>
             )}
           </div>
-          <div className="relative flex-1 min-h-55">
+          <div className="relative rounded-xl border border-border overflow-hidden bg-muted/30 min-h-55.5 flex flex-col">
             <Textarea
               id="url-output"
               readOnly
-              placeholder="Output will appear here..."
+              placeholder="Converted output will appear here..."
               value={output}
               className={cn(
-                "w-full h-full min-h-55 font-mono text-sm resize-none bg-muted/30 focus-visible:ring-0 cursor-default",
-                error && "border-destructive/30 bg-destructive/5 text-destructive/90"
+                "flex-1 min-h-55 font-mono text-sm resize-none border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 p-4 leading-relaxed cursor-default",
+                error && "text-red-700 dark:text-red-400 bg-red-50/10"
               )}
               aria-label={mode === "encode" ? "Encoded URL output text" : "Decoded URL output text"}
             />
             {error && (
-              <div className="absolute inset-0 bg-destructive/10 backdrop-blur-[1px] flex flex-col justify-center items-center p-6 text-center border border-destructive/20 rounded-lg animate-in fade-in duration-200">
-                <AlertCircle className="h-8 w-8 text-destructive mb-2 animate-bounce" />
-                <h4 className="font-semibold text-destructive text-sm">Decoding Failure</h4>
-                <p className="text-xs text-destructive/80 mt-1 max-w-sm whitespace-pre-wrap">{error}</p>
+              <div className="absolute inset-0 bg-red-50/90 dark:bg-red-950/90 backdrop-blur-[1px] flex flex-col justify-center items-center p-6 text-center border border-red-200 dark:border-red-900/50 rounded-xl animate-scale-in">
+                <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400 mb-2 animate-bounce" />
+                <h4 className="font-bold text-red-700 dark:text-red-400 text-sm">Decoding Failure</h4>
+                <p className="text-xs text-red-700/80 dark:text-red-400/85 mt-1.5 max-w-sm font-medium">{error}</p>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Configuration Panel */}
-      <div className="flex flex-col gap-4 p-4 bg-muted/30 rounded-lg border border-border shadow-inner">
-        <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-          <Settings2 className="h-4 w-4 text-primary" />
-          Settings
+      {/* Configuration Settings Panel */}
+      <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Settings2 className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold text-foreground">Encoding & Decoding Configurations</h2>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 pt-1">
           {/* Target Encoding Mode */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="encode-mode-select" className="text-xs font-semibold text-muted-foreground uppercase">
+            <label htmlFor="encode-mode-select" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
               URI Scope Selection
             </label>
             <Select
@@ -362,20 +402,20 @@ export function UrlTool() {
                 setSettings((prev) => ({ ...prev, encodeMode: val }))
               }
             >
-              <SelectTrigger id="encode-mode-select" className="h-9 w-full bg-background" aria-label="Select URL encoding scope">
+              <SelectTrigger id="encode-mode-select" className="h-10 rounded-xl bg-card border border-border" aria-label="Select URL encoding scope">
                 <SelectValue placeholder="Encoding Mode" />
               </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="component">Component (Query value)</SelectItem>
-                <SelectItem value="uri">Full URI (Keep protocol, ?, &)</SelectItem>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="component">Component (Query param value)</SelectItem>
+                <SelectItem value="uri">Full URI (Skip protocol, ?, &)</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Space encoding */}
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="space-encoding-select" className="text-xs font-semibold text-muted-foreground uppercase">
-              Space Character
+            <label htmlFor="space-encoding-select" className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+              Space Character Code
             </label>
             <Select
               value={settings.spaceAsPlus ? "plus" : "percent"}
@@ -383,10 +423,10 @@ export function UrlTool() {
                 setSettings((prev) => ({ ...prev, spaceAsPlus: val === "plus" }))
               }
             >
-              <SelectTrigger id="space-encoding-select" className="h-9 w-full bg-background" aria-label="Select space character encoding format">
+              <SelectTrigger id="space-encoding-select" className="h-10 rounded-xl bg-card border border-border" aria-label="Select space character encoding format">
                 <SelectValue placeholder="Space Encoding" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-xl">
                 <SelectItem value="percent">Percent Encode (%20)</SelectItem>
                 <SelectItem value="plus">Plus Sign (+)</SelectItem>
               </SelectContent>
@@ -394,47 +434,47 @@ export function UrlTool() {
           </div>
 
           {/* Strict Checkbox */}
-          <div className="flex items-center space-x-2 pt-2 sm:pt-6">
+          <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card h-10 mt-auto">
             <Checkbox
               id="rfc3986-check"
               checked={settings.rfc3986}
               onCheckedChange={(checked) =>
                 setSettings((prev) => ({ ...prev, rfc3986: !!checked }))
               }
-              aria-label="Enable strict RFC 3986 compliance"
+              className="rounded"
             />
-            <div className="grid gap-1 leading-none">
+            <div className="grid leading-none">
               <label
                 htmlFor="rfc3986-check"
-                className="text-sm font-medium text-foreground cursor-pointer"
+                className="text-xs font-bold text-muted-foreground uppercase cursor-pointer"
               >
                 RFC 3986 Strict
               </label>
-              <p className="text-[11px] text-muted-foreground">
-                Force encodes <code className="bg-muted px-1 rounded">! * &apos; ( )</code>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Encodes <code className="font-mono bg-muted px-1 rounded">! * &apos; ( )</code>
               </p>
             </div>
           </div>
 
           {/* Auto process */}
-          <div className="flex items-center space-x-2 pt-2 sm:pt-6">
+          <div className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card h-10 mt-auto">
             <Checkbox
               id="autoprocess-check"
               checked={settings.autoProcess}
               onCheckedChange={(checked) =>
                 setSettings((prev) => ({ ...prev, autoProcess: !!checked }))
               }
-              aria-label="Enable real-time automatic processing"
+              className="rounded"
             />
-            <div className="grid gap-1 leading-none">
+            <div className="grid leading-none">
               <label
                 htmlFor="autoprocess-check"
-                className="text-sm font-medium text-foreground cursor-pointer"
+                className="text-xs font-bold text-muted-foreground uppercase cursor-pointer"
               >
                 Auto Process
               </label>
-              <p className="text-[11px] text-muted-foreground">
-                Convert inputs in real-time
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Convert inputs dynamically
               </p>
             </div>
           </div>
@@ -442,117 +482,75 @@ export function UrlTool() {
       </div>
 
       {/* Actions & Status Ribbon */}
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 pt-2">
-        {/* Left Toolbar */}
-        <div className="flex flex-wrap gap-2">
-          {!settings.autoProcess && (
-            <Button
-              onClick={triggerManualProcess}
-              className="h-9 px-4 cursor-pointer"
-              aria-label="Trigger manual URL conversion"
-            >
-              <RefreshCw className="h-4 w-4 mr-1.5" />
-              Process
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={handleSwap}
-            disabled={!output && !input}
-            className="h-9 px-4 cursor-pointer font-medium hover:text-primary transition-colors"
-            aria-label="Swap input and output values and switch mode"
-          >
-            <ArrowLeftRight className="h-4 w-4 mr-1.5 text-muted-foreground" />
-            Swap
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleCopy}
-            disabled={!output || !!error}
-            className="h-9 px-4 cursor-pointer font-medium hover:text-primary transition-colors"
-            aria-label="Copy output text to clipboard"
-          >
-            <Copy className="h-4 w-4 mr-1.5 text-muted-foreground" />
-            Copy Output
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleClear}
-            disabled={!input && !output}
-            className="h-9 px-4 cursor-pointer font-medium"
-            aria-label="Clear all inputs and outputs"
-          >
-            <Trash2 className="h-4 w-4 mr-1.5" />
-            Clear
-          </Button>
-        </div>
-
-        {/* Right Toolbar Status Badges */}
-        <div className="flex flex-wrap items-center gap-3">
+      {input && (
+        <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-scale-in">
           {/* Validation Status */}
-          {input && (
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <span>Input Check:</span>
-              {error ? (
-                <Badge variant="destructive" className="gap-1 shadow-sm">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Invalid Encoding
-                </Badge>
-              ) : (
-                <Badge
-                  variant="secondary"
-                  className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 gap-1 border border-emerald-500/20 shadow-sm"
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Valid Format
-                </Badge>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+            <span>Input Format Check:</span>
+            {error ? (
+              <Badge variant="outline" className="gap-1 bg-red-50 text-red-700 border-red-200 rounded-full px-2 py-0.5 text-[10px]">
+                <AlertCircle className="h-3 w-3 text-red-600" />
+                Invalid percent sequence
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="bg-emerald-50 text-emerald-700 border-emerald-200 rounded-full gap-1 px-2 py-0.5 text-[10px]"
+              >
+                <CheckCircle2 className="h-3 w-3 text-emerald-600" />
+                Valid percent format
+              </Badge>
+            )}
+          </div>
 
           {/* Round-trip Status */}
-          {input && output && !error && (
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <span>Round-trip:</span>
+          {output && !error && (
+            <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              <span>Conversion Round-trip:</span>
               {roundTrip.valid ? (
                 <Badge
-                  variant="secondary"
+                  variant="outline"
                   className={cn(
-                    "gap-1 border cursor-help shadow-sm",
+                    "gap-1 border rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm",
                     roundTrip.type === "exact"
-                      ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-emerald-500/20"
-                      : "bg-amber-500/10 text-amber-500 hover:bg-amber-500/10 border-amber-500/20"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
                   )}
-                  title={roundTrip.reason || "Decodes exactly back to input text."}
+                  title={roundTrip.reason || "Decodes exactly back to original input text."}
                 >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <CheckCircle2 className="h-3 w-3" />
                   {roundTrip.type === "exact" ? "Lossless (Exact)" : "Lossless (Semantic)"}
                 </Badge>
               ) : (
                 <Badge
-                  variant="secondary"
-                  className="bg-red-500/10 text-red-500 hover:bg-red-500/10 gap-1 border border-red-500/20 shadow-sm"
+                  variant="outline"
+                  className="bg-red-50 text-red-700 border-red-200 rounded-full gap-1 px-2 py-0.5 text-[10px]"
                 >
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Lossy Match
+                  <AlertCircle className="h-3 w-3 text-red-600" />
+                  Lossy conversion
                 </Badge>
               )}
             </div>
           )}
         </div>
-      </div>
+      )}
 
       {/* Keyboard Shortcuts Helper Panel */}
-      <div className="text-[11px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1.5 justify-center sm:justify-start border-t border-border pt-4">
-        <span className="font-semibold text-foreground">Keyboard Shortcuts:</span>
-        <span className="flex items-center gap-1">
-          <kbd className="bg-muted px-1.5 py-0.5 rounded border border-border font-mono shadow-sm">Alt + S</kbd> Swap Panels & Switch Mode
+      <div className="text-[11px] font-semibold text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 justify-center sm:justify-start border-t border-border/50 pt-5">
+        <span className="text-foreground uppercase tracking-wider text-[10px] font-bold">
+          Keyboard Shortcuts
         </span>
-        <span className="flex items-center gap-1">
-          <kbd className="bg-muted px-1.5 py-0.5 rounded border border-border font-mono shadow-sm">Alt + C</kbd> Copy Output
+        <span className="flex items-center gap-2">
+          <kbd className="bg-muted px-2 py-0.5 rounded-lg border border-border font-mono shadow-sm text-foreground text-[10px] font-bold">Alt + S</kbd>
+          <span>Swap values and toggle mode</span>
         </span>
-        <span className="flex items-center gap-1">
-          <kbd className="bg-muted px-1.5 py-0.5 rounded border border-border font-mono shadow-sm">Alt + X</kbd> Clear View
+        <span className="flex items-center gap-2">
+          <kbd className="bg-muted px-2 py-0.5 rounded-lg border border-border font-mono shadow-sm text-foreground text-[10px] font-bold">Alt + C</kbd>
+          <span>Copy output text</span>
+        </span>
+        <span className="flex items-center gap-2">
+          <kbd className="bg-muted px-2 py-0.5 rounded-lg border border-border font-mono shadow-sm text-foreground text-[10px] font-bold">Alt + X</kbd>
+          <span>Reset inputs</span>
         </span>
       </div>
     </div>

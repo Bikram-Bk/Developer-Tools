@@ -2,13 +2,13 @@
 
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useTools } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useState, useMemo, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Copy,
   Trash2,
@@ -22,6 +22,7 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
+  Heart
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -158,12 +159,29 @@ function getTimeRemaining(expTimestamp: number): string {
   return parts.join(" ");
 }
 
+// ─── FavoriteButton Helper ───────────────────────────────────────────────────
+
+function FavoriteButton({ toolId }: { toolId: string }) {
+  const { favorites, toggleFavorite } = useTools();
+  const isFav = favorites.includes(toolId);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all"
+      onClick={() => toggleFavorite(toolId)}
+      aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
+    >
+      <Heart className={cn("h-5 w-5 transition-all", isFav ? "fill-red-500 text-red-500 scale-110" : "scale-100")} />
+    </Button>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function JwtDecoder() {
   const [token, setToken] = useState("");
 
-  // ─── Live Decode via useMemo (no setState in effect) ────────────────────────
   const decoded = useMemo<DecodedJwt | null>(() => {
     if (!token.trim()) return null;
 
@@ -182,7 +200,6 @@ export function JwtDecoder() {
     return decodeJwt(token.trim());
   }, [token]);
 
-  // ─── Expiry Status ──────────────────────────────────────────────────────────
   const expiryStatus = useMemo(() => {
     if (!decoded?.isValid || !decoded.payload.exp) return null;
 
@@ -204,7 +221,6 @@ export function JwtDecoder() {
     };
   }, [decoded]);
 
-  // ─── Copy ───────────────────────────────────────────────────────────────────
   const handleCopy = useCallback((text: string, label: string) => {
     if (!text) {
       toast.error("Nothing to copy!");
@@ -216,209 +232,185 @@ export function JwtDecoder() {
       .catch(() => toast.error(`Failed to copy ${label}`));
   }, []);
 
-  // ─── Clear ──────────────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
     setToken("");
     toast.success("Cleared all inputs");
   }, []);
 
-  // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-6 p-6 bg-card rounded-xl border border-border shadow-sm max-w-6xl mx-auto animate-in fade-in duration-300">
+    <div className="card-premium p-6 md:p-8 space-y-8 animate-slide-up max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">JWT Decoder</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Decode and inspect JSON Web Tokens entirely in your browser
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">JWT Decoder</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Decode, inspect and verify JSON Web Tokens (JWT) payload timestamps client-side.
           </p>
+        </div>
+        <FavoriteButton toolId="jwt-decoder" />
+      </div>
+
+      {/* Token Input */}
+      <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <Key className="size-4 text-muted-foreground" />
+            JWT Token Input
+          </h2>
+          {token && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleClear}
+              className="h-8 rounded-xl text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-card active:scale-95 transition-all"
+              aria-label="Clear JWT token"
+            >
+              <Trash2 className="size-3.5" />
+              Clear
+            </Button>
+          )}
+        </div>
+        <div className="relative rounded-xl border border-border focus-within:border-primary/45 focus-within:ring-1 focus-within:ring-primary/20 transition-all overflow-hidden bg-card">
+          <Textarea
+            id="jwt-token-input"
+            placeholder="Paste your base64-encoded JWT token here..."
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            rows={4}
+            className="font-mono text-xs resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none p-4 leading-relaxed"
+            aria-label="JWT token input"
+          />
         </div>
       </div>
 
-      {/* ─── Token Input ──────────────────────────────────────────────────── */}
-      <Card className="shadow-inner">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Key className="size-4" />
-            JWT Token
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Paste your JWT token to decode its header and payload
-          </p>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="jwt-token-input"
-              className="text-xs font-semibold text-muted-foreground uppercase"
-            >
-              Encoded JWT
-            </label>
-            <Textarea
-              id="jwt-token-input"
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              rows={4}
-              className="font-mono text-xs resize-none"
-              aria-label="JWT token input"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleClear}
-              className="cursor-pointer"
-              aria-label="Clear JWT token"
-            >
-              <Trash2 className="size-3.5 mr-1" />
-              Clear
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ─── Error Display ────────────────────────────────────────────────── */}
+      {/* Error Display */}
       {decoded && !decoded.isValid && decoded.error && (
-        <div className="p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg flex items-start gap-3 animate-in fade-in">
-          <AlertCircle className="size-5 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl border text-sm transition-all bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50 animate-scale-in">
+          <AlertCircle className="size-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
           <div>
-            <p className="font-medium text-sm">Invalid Token</p>
-            <p className="text-xs opacity-80">{decoded.error}</p>
+            <p className="font-semibold">Parse Error</p>
+            <p className="text-xs text-red-700/80 dark:text-red-400/85 mt-0.5">{decoded.error}</p>
           </div>
         </div>
       )}
 
-      {/* ─── Token Status ─────────────────────────────────────────────────── */}
+      {/* Token Status & Decoded View */}
       {decoded?.isValid && (
-        <>
-          {/* Signature & Expiry Status Bar */}
+        <div className="space-y-6 animate-scale-in">
+          {/* Status Metrics Cards Grid */}
           <div className="grid gap-4 sm:grid-cols-3">
             {/* Signature Status */}
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  {decoded.signature ? (
-                    <div className="p-2 rounded-full bg-amber-500/10">
-                      <ShieldAlert className="size-5 text-amber-500" />
-                    </div>
-                  ) : (
-                    <div className="p-2 rounded-full bg-destructive/10">
-                      <ShieldX className="size-5 text-destructive" />
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase">
-                      Signature
-                    </p>
-                    <p className="text-sm font-medium">
-                      {decoded.signature ? "Present (not verified)" : "Missing"}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Verification requires secret key
-                    </p>
-                  </div>
+            <div className="rounded-2xl border border-border/50 bg-card p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-all duration-200">
+              {decoded.signature ? (
+                <div className="p-2 rounded-xl bg-amber-50 text-amber-700 border border-amber-200/50 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-900/40">
+                  <ShieldAlert className="size-5" />
                 </div>
-              </CardContent>
-            </Card>
+              ) : (
+                <div className="p-2 rounded-xl bg-red-50 text-red-700 border border-red-200/50 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/40">
+                  <ShieldX className="size-5" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Signature
+                </p>
+                <p className="text-xs font-semibold text-foreground mt-0.5 truncate">
+                  {decoded.signature ? "Unverified Signature" : "No Signature"}
+                </p>
+                <p className="text-[9px] text-muted-foreground truncate leading-none mt-0.5">
+                  Needs signature secret verification
+                </p>
+              </div>
+            </div>
 
             {/* Expiry Status */}
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  {expiryStatus ? (
-                    expiryStatus.status === "active" ? (
-                      <div className="p-2 rounded-full bg-emerald-500/10">
-                        <CheckCircle className="size-5 text-emerald-500" />
-                      </div>
-                    ) : (
-                      <div className="p-2 rounded-full bg-destructive/10">
-                        <XCircle className="size-5 text-destructive" />
-                      </div>
-                    )
-                  ) : (
-                    <div className="p-2 rounded-full bg-muted">
-                      <Clock className="size-5 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase">
-                      Expiration
-                    </p>
-                    {expiryStatus ? (
-                      <>
-                        <Badge
-                          className={cn(
-                            "text-[10px] py-0 px-1.5",
-                            expiryStatus.status === "active"
-                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                              : "bg-destructive/10 text-destructive"
-                          )}
-                        >
-                          {expiryStatus.status === "active"
-                            ? "Active"
-                            : expiryStatus.status === "expired"
-                              ? "Expired"
-                              : "Not Yet Valid"}
-                        </Badge>
-                        {expiryStatus.remaining && (
-                          <p className="text-[10px] text-muted-foreground mt-0.5">
-                            Expires in {expiryStatus.remaining}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No expiration set
+            <div className="rounded-2xl border border-border/50 bg-card p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-all duration-200">
+              {expiryStatus ? (
+                expiryStatus.status === "active" ? (
+                  <div className="p-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/50 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/40">
+                    <CheckCircle className="size-5" />
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-xl bg-red-50 text-red-700 border border-red-200/50 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/40">
+                    <XCircle className="size-5" />
+                  </div>
+                )
+              ) : (
+                <div className="p-2 rounded-xl bg-muted text-muted-foreground">
+                  <Clock className="size-5" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Token Validity
+                </p>
+                {expiryStatus ? (
+                  <div className="mt-1 flex flex-col gap-0.5">
+                    <Badge
+                      className={cn(
+                        "text-[9px] py-0 px-2 rounded-full font-bold uppercase tracking-wider w-fit",
+                        expiryStatus.status === "active"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50"
+                          : "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50"
+                      )}
+                    >
+                      {expiryStatus.status === "active"
+                        ? "Active"
+                        : expiryStatus.status === "expired"
+                          ? "Expired"
+                          : "Not Valid Yet"}
+                    </Badge>
+                    {expiryStatus.remaining && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                        Expires: {expiryStatus.remaining}
                       </p>
                     )}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                ) : (
+                  <p className="text-xs font-semibold text-muted-foreground mt-0.5">
+                    No expiry date set
+                  </p>
+                )}
+              </div>
+            </div>
 
             {/* Algorithm */}
-            <Card>
-              <CardContent className="py-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-primary/10">
-                    <ShieldCheck className="size-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase">
-                      Algorithm
-                    </p>
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] py-0 px-1.5 font-mono mt-0.5"
-                    >
-                      {decoded.header.alg || "Unknown"}
-                    </Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="rounded-2xl border border-border/50 bg-card p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-all duration-200">
+              <div className="p-2 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-200/50 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-900/40">
+                <ShieldCheck className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Algorithm
+                </p>
+                <Badge
+                  variant="secondary"
+                  className="text-[10px] font-semibold py-0 px-2 font-mono mt-1 rounded-full border border-border text-foreground"
+                >
+                  {decoded.header.alg || "NONE"}
+                </Badge>
+              </div>
+            </div>
           </div>
 
-          {/* ─── Decoded Content ──────────────────────────────────────────── */}
-          <Tabs defaultValue="payload" className="w-full">
-            <TabsList>
-              <TabsTrigger value="payload" aria-label="View payload tab">
-                <Braces className="size-3.5 mr-1" />
-                Payload
+          {/* Decoded Content Split Tabs */}
+          <Tabs defaultValue="payload" className="w-full space-y-4">
+            <TabsList className="bg-muted p-1 rounded-lg h-8 w-auto">
+              <TabsTrigger value="payload" className="text-xs rounded-md px-3 h-full cursor-pointer" aria-label="View payload tab">
+                <Braces className="size-3.5 mr-1.5" />
+                Payload Claims
               </TabsTrigger>
-              <TabsTrigger value="header" aria-label="View header tab">
-                <FileCode className="size-3.5 mr-1" />
-                Header
+              <TabsTrigger value="header" className="text-xs rounded-md px-3 h-full cursor-pointer" aria-label="View header tab">
+                <FileCode className="size-3.5 mr-1.5" />
+                Header Claims
               </TabsTrigger>
             </TabsList>
 
             {/* Payload Tab */}
-            <TabsContent value="payload" className="mt-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle>Payload Data</CardTitle>
+            <TabsContent value="payload" className="mt-0">
+              <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">Payload claims data</h3>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -428,38 +420,37 @@ export function JwtDecoder() {
                         "Payload"
                       )
                     }
-                    className="cursor-pointer"
+                    className="h-8 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
                     aria-label="Copy payload JSON"
                   >
-                    <Copy className="size-3.5 mr-1" />
-                    Copy
+                    <Copy className="size-3.5" />
+                    Copy Payload
                   </Button>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-75 rounded-lg border border-input bg-muted/30 dark:bg-input/30">
-                    <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+                </div>
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <ScrollArea className="h-72">
+                    <pre className="p-4 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">
                       {formatJson(decoded.payload as Record<string, unknown>)}
                     </pre>
                   </ScrollArea>
+                </div>
 
-                  {/* Timestamps */}
-                  {expiryStatus &&
-                    (expiryStatus.iatDate ||
-                      expiryStatus.expDate ||
-                      expiryStatus.nbfDate) && (
-                      <div className="mt-3 space-y-1.5">
-                        <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-2">
-                          Timestamps
-                        </p>
+                {/* Timestamps */}
+                {expiryStatus &&
+                  (expiryStatus.iatDate ||
+                    expiryStatus.expDate ||
+                    expiryStatus.nbfDate) && (
+                    <div className="p-4 rounded-xl border border-border bg-card/60 space-y-3">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider border-b border-border/50 pb-1.5">
+                        Timestamp Information
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-3">
                         {expiryStatus.iatDate && (
                           <div className="flex items-center gap-2 text-xs">
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] py-0 px-1.5 font-mono"
-                            >
+                            <Badge variant="outline" className="text-[9px] font-mono font-bold px-1.5 py-0 rounded-full">
                               iat
                             </Badge>
-                            <span className="text-muted-foreground">
+                            <span className="text-muted-foreground truncate" title={expiryStatus.iatDate}>
                               Issued: {expiryStatus.iatDate}
                             </span>
                           </div>
@@ -469,20 +460,22 @@ export function JwtDecoder() {
                             <Badge
                               variant="outline"
                               className={cn(
-                                "text-[10px] py-0 px-1.5 font-mono",
+                                "text-[9px] font-mono font-bold px-1.5 py-0 rounded-full",
                                 expiryStatus.status === "expired"
-                                  ? "border-destructive text-destructive"
-                                  : "border-emerald-500 text-emerald-600"
+                                  ? "border-red-300 text-red-700 bg-red-50 dark:bg-red-950/30"
+                                  : "border-emerald-300 text-emerald-700 bg-emerald-50 dark:bg-emerald-950/30"
                               )}
                             >
                               exp
                             </Badge>
                             <span
                               className={cn(
-                                "text-muted-foreground",
-                                expiryStatus.status === "expired" &&
-                                "text-destructive"
+                                "text-muted-foreground truncate",
+                                expiryStatus.status === "expired"
+                                  ? "text-red-600 font-semibold"
+                                  : "text-emerald-700 dark:text-emerald-400 font-semibold"
                               )}
+                              title={expiryStatus.expDate}
                             >
                               Expires: {expiryStatus.expDate}
                             </span>
@@ -490,28 +483,25 @@ export function JwtDecoder() {
                         )}
                         {expiryStatus.nbfDate && (
                           <div className="flex items-center gap-2 text-xs">
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] py-0 px-1.5 font-mono"
-                            >
+                            <Badge variant="outline" className="text-[9px] font-mono font-bold px-1.5 py-0 rounded-full">
                               nbf
                             </Badge>
-                            <span className="text-muted-foreground">
+                            <span className="text-muted-foreground truncate" title={expiryStatus.nbfDate}>
                               Not Before: {expiryStatus.nbfDate}
                             </span>
                           </div>
                         )}
                       </div>
-                    )}
-                </CardContent>
-              </Card>
+                    </div>
+                  )}
+              </div>
             </TabsContent>
 
             {/* Header Tab */}
-            <TabsContent value="header" className="mt-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle>Header Data</CardTitle>
+            <TabsContent value="header" className="mt-0">
+              <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-foreground">Header metadata data</h3>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -521,46 +511,44 @@ export function JwtDecoder() {
                         "Header"
                       )
                     }
-                    className="cursor-pointer"
+                    className="h-8 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
                     aria-label="Copy header JSON"
                   >
-                    <Copy className="size-3.5 mr-1" />
-                    Copy
+                    <Copy className="size-3.5" />
+                    Copy Header
                   </Button>
-                </CardHeader>
-                <CardContent>
-                  <ScrollArea className="h-75 rounded-lg border border-input bg-muted/30 dark:bg-input/30">
-                    <pre className="p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+                </div>
+                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                  <ScrollArea className="h-72">
+                    <pre className="p-4 font-mono text-xs leading-relaxed text-foreground whitespace-pre-wrap">
                       {formatJson(decoded.header as Record<string, unknown>)}
                     </pre>
                   </ScrollArea>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </TabsContent>
           </Tabs>
 
-          {/* Signature Display */}
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle>Signature</CardTitle>
+          {/* Signature Verification Block */}
+          <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">Signature Hash String</h3>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => handleCopy(decoded.signature, "Signature")}
-                className="cursor-pointer"
+                className="h-8 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
                 aria-label="Copy signature"
               >
-                <Copy className="size-3.5 mr-1" />
-                Copy
+                <Copy className="size-3.5" />
+                Copy Signature
               </Button>
-            </CardHeader>
-            <CardContent>
-              <code className="block break-all rounded-lg border border-input bg-muted/30 p-3 font-mono text-xs dark:bg-input/30">
-                {decoded.signature}
-              </code>
-            </CardContent>
-          </Card>
-        </>
+            </div>
+            <code className="block break-all rounded-xl border border-border bg-card p-4 font-mono text-xs text-foreground shadow-sm">
+              {decoded.signature}
+            </code>
+          </div>
+        </div>
       )}
     </div>
   );

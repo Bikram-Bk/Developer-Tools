@@ -3,13 +3,12 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useTools } from "@/lib/store";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useState, useMemo, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Copy,
   AlertCircle,
@@ -19,6 +18,7 @@ import {
   Contrast,
   Pipette,
   RefreshCw,
+  Heart
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -180,6 +180,24 @@ function generatePalette(baseHex: string): PaletteColor[] {
   });
 }
 
+// ─── FavoriteButton Helper ───────────────────────────────────────────────────
+
+function FavoriteButton({ toolId }: { toolId: string }) {
+  const { favorites, toggleFavorite } = useTools();
+  const isFav = favorites.includes(toolId);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all"
+      onClick={() => toggleFavorite(toolId)}
+      aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
+    >
+      <Heart className={cn("h-5 w-5 transition-all", isFav ? "fill-red-500 text-red-500 scale-110" : "scale-100")} />
+    </Button>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ColorPicker() {
@@ -283,7 +301,7 @@ export function ColorPicker() {
         b < 0 ||
         b > 255
       ) {
-        setRgbError("RGB values must be between 0 and 255");
+        setRgbError("RGB values must be 0 - 255");
         return;
       }
 
@@ -375,522 +393,484 @@ export function ColorPicker() {
     toast.success("Reset to default color");
   }, []);
 
-  // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col gap-6 p-6 bg-card rounded-xl border border-border shadow-sm max-w-6xl mx-auto animate-in fade-in duration-300">
+    <div className="card-premium p-6 md:p-8 space-y-8 animate-slide-up max-w-6xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Color Picker</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Pick colors, convert between formats, check contrast, and generate
-            palettes
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Color Picker</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Pick colors, convert between HEX/RGB/HSL, and check WCAG contrast compliance.
           </p>
         </div>
+        <FavoriteButton toolId="color-picker" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ─── Left Column - Color Picker & Inputs ────────────────────────── */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-6">
           {/* Color Preview */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Pipette className="size-4" />
-                Color Preview
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div
-                className="w-full h-32 rounded-lg border border-border shadow-inner transition-colors duration-200"
-                style={{ backgroundColor: color }}
-                aria-label={`Color preview: ${color}`}
-                role="img"
+          <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+            <h2 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <Pipette className="size-4 text-muted-foreground" />
+              Color Preview & Picker
+            </h2>
+            <div
+              className="w-full h-36 rounded-2xl border border-border/50 shadow-inner transition-all duration-200 relative overflow-hidden"
+              style={{ backgroundColor: color }}
+              aria-label={`Color preview: ${color}`}
+              role="img"
+            />
+            <div className="space-y-1">
+              <label
+                htmlFor="native-color-picker"
+                className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+              >
+                Native Color Picker
+              </label>
+              <Input
+                id="native-color-picker"
+                type="color"
+                value={color}
+                onChange={handleColorPickerChange}
+                className="h-10 w-full cursor-pointer p-1 rounded-xl border border-border bg-card"
+                aria-label="HTML5 color picker"
               />
-              <div className="mt-3">
-                <label
-                  htmlFor="native-color-picker"
-                  className="text-xs font-semibold text-muted-foreground uppercase"
-                >
-                  Native Color Picker
-                </label>
-                <Input
-                  id="native-color-picker"
-                  type="color"
-                  value={color}
-                  onChange={handleColorPickerChange}
-                  className="mt-1 h-10 w-full cursor-pointer p-1"
-                  aria-label="HTML5 color picker"
-                />
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* HEX Input */}
-          <Card className="shadow-inner">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle>HEX</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleCopy(color, "HEX")}
-                  className="cursor-pointer"
-                  aria-label="Copy HEX value"
-                >
-                  <Copy className="size-3.5 mr-1" />
-                  Copy
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <Input
-                id="hex-input"
-                type="text"
-                value={hexInput}
-                onChange={(e) => handleHexInputChange(e.target.value)}
-                placeholder="#000000"
-                className={cn(
-                  "font-mono text-sm",
-                  hexError &&
-                    "aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
-                )}
-                aria-label="HEX color value"
-                aria-invalid={!!hexError}
-              />
-              {hexError && (
-                <p className="text-[10px] text-destructive mt-1.5 flex items-center gap-1">
-                  <AlertCircle className="size-3" />
-                  {hexError}
-                </p>
+          <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">HEX</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => handleCopy(color, "HEX")}
+                className="h-8 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
+                aria-label="Copy HEX value"
+              >
+                <Copy className="size-3.5" />
+                Copy
+              </Button>
+            </div>
+            <Input
+              id="hex-input"
+              type="text"
+              value={hexInput}
+              onChange={(e) => handleHexInputChange(e.target.value)}
+              placeholder="#000000"
+              className={cn(
+                "font-mono text-sm rounded-xl border-border focus:border-primary",
+                hexError && "border-red-500 focus-visible:ring-red-500",
               )}
-            </CardContent>
-          </Card>
+              aria-label="HEX color value"
+            />
+            {hexError && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1.5 font-medium animate-scale-in">
+                <AlertCircle className="size-3.5 shrink-0" />
+                {hexError}
+              </p>
+            )}
+          </div>
 
           {/* RGB Input */}
-          <Card className="shadow-inner">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle>RGB</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    handleCopy(
-                      `rgb(${currentRgb?.r}, ${currentRgb?.g}, ${currentRgb?.b})`,
-                      "RGB",
-                    )
-                  }
-                  className="cursor-pointer"
-                  aria-label="Copy RGB value"
+          <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">RGB</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  handleCopy(
+                    `rgb(${currentRgb?.r}, ${currentRgb?.g}, ${currentRgb?.b})`,
+                    "RGB",
+                  )
+                }
+                className="h-8 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
+                aria-label="Copy RGB value"
+              >
+                <Copy className="size-3.5" />
+                Copy
+              </Button>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-1 space-y-1">
+                <label
+                  htmlFor="rgb-r-input"
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
                 >
-                  <Copy className="size-3.5 mr-1" />
-                  Copy
-                </Button>
+                  Red
+                </label>
+                <Input
+                  id="rgb-r-input"
+                  type="number"
+                  min={0}
+                  max={255}
+                  value={rgbInput.r}
+                  onChange={(e) => handleRgbInputChange("r", e.target.value)}
+                  className="font-mono text-sm text-center rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label="Red channel value"
+                />
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label
-                    htmlFor="rgb-r-input"
-                    className="text-[10px] font-semibold text-muted-foreground uppercase"
-                  >
-                    R
-                  </label>
-                  <Input
-                    id="rgb-r-input"
-                    type="number"
-                    min={0}
-                    max={255}
-                    value={rgbInput.r}
-                    onChange={(e) => handleRgbInputChange("r", e.target.value)}
-                    className="font-mono text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Red channel value"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label
-                    htmlFor="rgb-g-input"
-                    className="text-[10px] font-semibold text-muted-foreground uppercase"
-                  >
-                    G
-                  </label>
-                  <Input
-                    id="rgb-g-input"
-                    type="number"
-                    min={0}
-                    max={255}
-                    value={rgbInput.g}
-                    onChange={(e) => handleRgbInputChange("g", e.target.value)}
-                    className="font-mono text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Green channel value"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label
-                    htmlFor="rgb-b-input"
-                    className="text-[10px] font-semibold text-muted-foreground uppercase"
-                  >
-                    B
-                  </label>
-                  <Input
-                    id="rgb-b-input"
-                    type="number"
-                    min={0}
-                    max={255}
-                    value={rgbInput.b}
-                    onChange={(e) => handleRgbInputChange("b", e.target.value)}
-                    className="font-mono text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Blue channel value"
-                  />
-                </div>
+              <div className="flex-1 space-y-1">
+                <label
+                  htmlFor="rgb-g-input"
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+                >
+                  Green
+                </label>
+                <Input
+                  id="rgb-g-input"
+                  type="number"
+                  min={0}
+                  max={255}
+                  value={rgbInput.g}
+                  onChange={(e) => handleRgbInputChange("g", e.target.value)}
+                  className="font-mono text-sm text-center rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label="Green channel value"
+                />
               </div>
-              {rgbError && (
-                <p className="text-[10px] text-destructive mt-1.5 flex items-center gap-1">
-                  <AlertCircle className="size-3" />
-                  {rgbError}
-                </p>
-              )}
-            </CardContent>
-          </Card>
+              <div className="flex-1 space-y-1">
+                <label
+                  htmlFor="rgb-b-input"
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+                >
+                  Blue
+                </label>
+                <Input
+                  id="rgb-b-input"
+                  type="number"
+                  min={0}
+                  max={255}
+                  value={rgbInput.b}
+                  onChange={(e) => handleRgbInputChange("b", e.target.value)}
+                  className="font-mono text-sm text-center rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label="Blue channel value"
+                />
+              </div>
+            </div>
+            {rgbError && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1.5 font-medium animate-scale-in">
+                <AlertCircle className="size-3.5 shrink-0" />
+                {rgbError}
+              </p>
+            )}
+          </div>
 
           {/* HSL Input */}
-          <Card className="shadow-inner">
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle>HSL</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    handleCopy(
-                      `hsl(${currentHsl?.h}, ${currentHsl?.s}%, ${currentHsl?.l}%)`,
-                      "HSL",
-                    )
-                  }
-                  className="cursor-pointer"
-                  aria-label="Copy HSL value"
+          <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">HSL</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  handleCopy(
+                    `hsl(${currentHsl?.h}, ${currentHsl?.s}%, ${currentHsl?.l}%)`,
+                    "HSL",
+                  )
+                }
+                className="h-8 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
+                aria-label="Copy HSL value"
+              >
+                <Copy className="size-3.5" />
+                Copy
+              </Button>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex-1 space-y-1">
+                <label
+                  htmlFor="hsl-h-input"
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
                 >
-                  <Copy className="size-3.5 mr-1" />
-                  Copy
-                </Button>
+                  Hue (H°)
+                </label>
+                <Input
+                  id="hsl-h-input"
+                  type="number"
+                  min={0}
+                  max={360}
+                  value={hslInput.h}
+                  onChange={(e) => handleHslInputChange("h", e.target.value)}
+                  className="font-mono text-sm text-center rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label="Hue degree value"
+                />
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label
-                    htmlFor="hsl-h-input"
-                    className="text-[10px] font-semibold text-muted-foreground uppercase"
-                  >
-                    H°
-                  </label>
-                  <Input
-                    id="hsl-h-input"
-                    type="number"
-                    min={0}
-                    max={360}
-                    value={hslInput.h}
-                    onChange={(e) => handleHslInputChange("h", e.target.value)}
-                    className="font-mono text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Hue degree value"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label
-                    htmlFor="hsl-s-input"
-                    className="text-[10px] font-semibold text-muted-foreground uppercase"
-                  >
-                    S%
-                  </label>
-                  <Input
-                    id="hsl-s-input"
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={hslInput.s}
-                    onChange={(e) => handleHslInputChange("s", e.target.value)}
-                    className="font-mono text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Saturation percentage value"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label
-                    htmlFor="hsl-l-input"
-                    className="text-[10px] font-semibold text-muted-foreground uppercase"
-                  >
-                    L%
-                  </label>
-                  <Input
-                    id="hsl-l-input"
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={hslInput.l}
-                    onChange={(e) => handleHslInputChange("l", e.target.value)}
-                    className="font-mono text-sm text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    aria-label="Lightness percentage value"
-                  />
-                </div>
+              <div className="flex-1 space-y-1">
+                <label
+                  htmlFor="hsl-s-input"
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+                >
+                  Sat (S%)
+                </label>
+                <Input
+                  id="hsl-s-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={hslInput.s}
+                  onChange={(e) => handleHslInputChange("s", e.target.value)}
+                  className="font-mono text-sm text-center rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label="Saturation percentage value"
+                />
               </div>
-              {hslError && (
-                <p className="text-[10px] text-destructive mt-1.5 flex items-center gap-1">
-                  <AlertCircle className="size-3" />
-                  {hslError}
-                </p>
-              )}
-            </CardContent>
-          </Card>
+              <div className="flex-1 space-y-1">
+                <label
+                  htmlFor="hsl-l-input"
+                  className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+                >
+                  Light (L%)
+                </label>
+                <Input
+                  id="hsl-l-input"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={hslInput.l}
+                  onChange={(e) => handleHslInputChange("l", e.target.value)}
+                  className="font-mono text-sm text-center rounded-xl [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  aria-label="Lightness percentage value"
+                />
+              </div>
+            </div>
+            {hslError && (
+              <p className="text-xs text-red-600 dark:text-red-400 mt-1 flex items-center gap-1.5 font-medium animate-scale-in">
+                <AlertCircle className="size-3.5 shrink-0" />
+                {hslError}
+              </p>
+            )}
+          </div>
 
           <Button
             variant="outline"
             size="sm"
             onClick={handleClear}
-            className="cursor-pointer w-fit"
-            aria-label="Reset to default color"
+            className="h-10 rounded-xl text-xs gap-1.5 hover:bg-muted/80 cursor-pointer active:scale-95 transition-all w-fit"
+            aria-label="Reset color value"
           >
-            <RefreshCw className="size-3.5 mr-1" />
-            Reset Color
+            <RefreshCw className="size-4" />
+            Reset Colors
           </Button>
         </div>
 
         {/* ─── Right Column - Contrast Checker ────────────────────────────── */}
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Contrast className="size-4" />
-                WCAG Contrast Checker
-              </CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Check contrast ratio between text and background colors
-              </p>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-              {/* Contrast Preview */}
-              <div
-                className="w-full h-24 rounded-lg border border-border flex items-center justify-center transition-colors duration-200"
-                style={{
-                  backgroundColor: bgColor,
-                  color: fgColor,
-                }}
-                aria-label={`Contrast preview: ${fgColor} text on ${bgColor} background`}
+        <div className="flex flex-col gap-6">
+          <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+            <h2 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <Contrast className="size-4 text-muted-foreground" />
+              WCAG Contrast Checker
+            </h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Analyze color accessibility contrast ratio between foreground text and backdrop colors.
+            </p>
+
+            {/* Contrast Preview */}
+            <div
+              className="w-full h-28 rounded-2xl border border-border/50 flex items-center justify-center transition-all duration-200 shadow-inner"
+              style={{
+                backgroundColor: bgColor,
+                color: fgColor,
+              }}
+              aria-label={`Contrast preview: ${fgColor} text on ${bgColor} background`}
+            >
+              <span className="text-base font-bold">Sample Text Aa</span>
+            </div>
+
+            {/* Foreground */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="fg-color-input"
+                className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
               >
-                <span className="text-lg font-semibold">Sample Text Aa</span>
+                Text Color (Foreground)
+              </label>
+              <div className="flex gap-3">
+                <Input
+                  id="fg-color-input"
+                  type="color"
+                  value={fgColor}
+                  onChange={(e) => {
+                    setFgColor(e.target.value.toUpperCase());
+                    setFgHexInput(e.target.value.toUpperCase());
+                  }}
+                  className="h-9 w-12 cursor-pointer p-0.5 rounded-xl border border-border bg-card"
+                  aria-label="Foreground color picker"
+                />
+                <Input
+                  type="text"
+                  value={fgHexInput}
+                  onChange={(e) => handleFgColorChange(e.target.value)}
+                  placeholder="#FFFFFF"
+                  className="font-mono text-sm rounded-xl"
+                  aria-label="Foreground HEX value"
+                />
               </div>
+            </div>
 
-              {/* Foreground */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="fg-color-input"
-                  className="text-xs font-semibold text-muted-foreground uppercase"
-                >
-                  Text Color (Foreground)
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    id="fg-color-input"
-                    type="color"
-                    value={fgColor}
-                    onChange={(e) => {
-                      setFgColor(e.target.value.toUpperCase());
-                      setFgHexInput(e.target.value.toUpperCase());
-                    }}
-                    className="h-9 w-12 cursor-pointer p-0.5"
-                    aria-label="Foreground color picker"
-                  />
-                  <Input
-                    type="text"
-                    value={fgHexInput}
-                    onChange={(e) => handleFgColorChange(e.target.value)}
-                    placeholder="#FFFFFF"
-                    className="font-mono text-sm flex-1"
-                    aria-label="Foreground HEX value"
-                  />
-                </div>
+            {/* Background */}
+            <div className="flex flex-col gap-1.5">
+              <label
+                htmlFor="bg-color-input"
+                className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider"
+              >
+                Background Color
+              </label>
+              <div className="flex gap-3">
+                <Input
+                  id="bg-color-input"
+                  type="color"
+                  value={bgColor}
+                  onChange={(e) => {
+                    setBgColor(e.target.value.toUpperCase());
+                    setBgHexInput(e.target.value.toUpperCase());
+                  }}
+                  className="h-9 w-12 cursor-pointer p-0.5 rounded-xl border border-border bg-card"
+                  aria-label="Background color picker"
+                />
+                <Input
+                  type="text"
+                  value={bgHexInput}
+                  onChange={(e) => handleBgColorChange(e.target.value)}
+                  placeholder="#3B82F6"
+                  className="font-mono text-sm rounded-xl"
+                  aria-label="Background HEX value"
+                />
               </div>
+            </div>
 
-              {/* Background */}
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="bg-color-input"
-                  className="text-xs font-semibold text-muted-foreground uppercase"
-                >
-                  Background Color
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    id="bg-color-input"
-                    type="color"
-                    value={bgColor}
-                    onChange={(e) => {
-                      setBgColor(e.target.value.toUpperCase());
-                      setBgHexInput(e.target.value.toUpperCase());
-                    }}
-                    className="h-9 w-12 cursor-pointer p-0.5"
-                    aria-label="Background color picker"
-                  />
-                  <Input
-                    type="text"
-                    value={bgHexInput}
-                    onChange={(e) => handleBgColorChange(e.target.value)}
-                    placeholder="#3B82F6"
-                    className="font-mono text-sm flex-1"
-                    aria-label="Background HEX value"
-                  />
-                </div>
-              </div>
+            {/* Contrast Results */}
+            {contrastRatio !== null && (
+              <div className="p-4 rounded-xl border border-border/50 bg-card/60 space-y-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex justify-between items-baseline">
+                  <span>Contrast Ratio</span>
+                  <span className="font-mono text-lg font-bold text-foreground normal-case">
+                    {contrastRatio.toFixed(2)}:1
+                  </span>
+                </p>
 
-              {/* Contrast Results */}
-              {contrastRatio !== null && (
-                <div className="p-4 rounded-lg border border-border bg-muted/30">
-                  <p className="text-sm font-semibold mb-3">
-                    Contrast Ratio:{" "}
-                    <span className="font-mono text-lg">
-                      {contrastRatio.toFixed(2)}:1
-                    </span>
-                  </p>
-
-                  <div className="space-y-2">
-                    {/* AA Normal */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">AA Normal Text</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">
-                          ≥ 4.5:1
+                <div className="space-y-2 border-t border-border/40 pt-2.5">
+                  {/* AA Normal */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-muted-foreground">AA Normal Text</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-muted-foreground">≥ 4.5:1</span>
+                      {wcagResults?.AANormal ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-full border border-emerald-200 dark:border-emerald-900/50">
+                          <CheckCircle className="size-3 shrink-0" />
+                          Pass
                         </span>
-                        {wcagResults?.AANormal ? (
-                          <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] py-0 px-1.5">
-                            <CheckCircle className="size-3 mr-0.5" />
-                            Pass
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="destructive"
-                            className="text-[10px] py-0 px-1.5"
-                          >
-                            <XCircle className="size-3 mr-0.5" />
-                            Fail
-                          </Badge>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 rounded-full border border-red-200 dark:border-red-900/50">
+                          <XCircle className="size-3 shrink-0" />
+                          Fail
+                        </span>
+                      )}
                     </div>
+                  </div>
 
-                    {/* AA Large */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">AA Large Text</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">
-                          ≥ 3:1
+                  {/* AA Large */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-muted-foreground">AA Large Text</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-muted-foreground">≥ 3.0:1</span>
+                      {wcagResults?.AALarge ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-full border border-emerald-200 dark:border-emerald-900/50">
+                          <CheckCircle className="size-3 shrink-0" />
+                          Pass
                         </span>
-                        {wcagResults?.AALarge ? (
-                          <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] py-0 px-1.5">
-                            <CheckCircle className="size-3 mr-0.5" />
-                            Pass
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="destructive"
-                            className="text-[10px] py-0 px-1.5"
-                          >
-                            <XCircle className="size-3 mr-0.5" />
-                            Fail
-                          </Badge>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 rounded-full border border-red-200 dark:border-red-900/50">
+                          <XCircle className="size-3 shrink-0" />
+                          Fail
+                        </span>
+                      )}
                     </div>
+                  </div>
 
-                    {/* AAA Normal */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs">AAA Normal Text</span>
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">
-                          ≥ 7:1
+                  {/* AAA Normal */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-muted-foreground">AAA Normal Text</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-muted-foreground">≥ 7.0:1</span>
+                      {wcagResults?.AAANormal ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 rounded-full border border-emerald-200 dark:border-emerald-900/50">
+                          <CheckCircle className="size-3 shrink-0" />
+                          Pass
                         </span>
-                        {wcagResults?.AAANormal ? (
-                          <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] py-0 px-1.5">
-                            <CheckCircle className="size-3 mr-0.5" />
-                            Pass
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="destructive"
-                            className="text-[10px] py-0 px-1.5"
-                          >
-                            <XCircle className="size-3 mr-0.5" />
-                            Fail
-                          </Badge>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 rounded-full border border-red-200 dark:border-red-900/50">
+                          <XCircle className="size-3 shrink-0" />
+                          Fail
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <Separator />
+      <Separator className="bg-border/60" />
 
       {/* ─── Color Palette Generator ──────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Palette className="size-4" />
-            Color Palette
-          </CardTitle>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Harmonious colors generated from your selected base color
+      <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+            <Palette className="size-4 text-muted-foreground" />
+            Color Palette Generator
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Harmonious matching color schemes created dynamically from the current color.
           </p>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="w-full">
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-              {palette.map((color) => (
-                <button
-                  key={color.name}
-                  className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border hover:border-primary transition-colors cursor-pointer group"
-                  onClick={() => {
-                    setColor(color.hex);
-                    setHexInput(color.hex);
-                    const rgb = hexToRgb(color.hex);
-                    if (rgb) {
-                      setRgbInput({
-                        r: String(rgb.r),
-                        g: String(rgb.g),
-                        b: String(rgb.b),
-                      });
-                      const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
-                      setHslInput({
-                        h: String(hsl.h),
-                        s: String(hsl.s),
-                        l: String(hsl.l),
-                      });
-                    }
-                    setHexError(null);
-                    setRgbError(null);
-                    setHslError(null);
-                  }}
-                  aria-label={`Select palette color: ${color.name} - ${color.hex}`}
-                >
-                  <div
-                    className="w-12 h-12 rounded-lg border border-border shadow-sm group-hover:scale-110 transition-transform"
-                    style={{ backgroundColor: color.hex }}
-                  />
-                  <div className="text-center">
-                    <p className="text-[10px] font-medium">{color.name}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono">
-                      {color.hex}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
+        </div>
+
+        <ScrollArea className="w-full pb-2">
+          <div className="flex gap-4 p-1 min-w-150 md:min-w-0 md:grid md:grid-cols-4 lg:grid-cols-6">
+            {palette.map((colorItem) => (
+              <button
+                key={colorItem.name}
+                className="flex flex-col items-center gap-2 p-3 rounded-2xl border border-border bg-card hover:border-primary transition-all duration-200 cursor-pointer group hover:-translate-y-0.5 active:scale-95"
+                onClick={() => {
+                  setColor(colorItem.hex);
+                  setHexInput(colorItem.hex);
+                  const rgb = hexToRgb(colorItem.hex);
+                  if (rgb) {
+                    setRgbInput({
+                      r: String(rgb.r),
+                      g: String(rgb.g),
+                      b: String(rgb.b),
+                    });
+                    const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+                    setHslInput({
+                      h: String(hsl.h),
+                      s: String(hsl.s),
+                      l: String(hsl.l),
+                    });
+                  }
+                  setHexError(null);
+                  setRgbError(null);
+                  setHslError(null);
+                }}
+                aria-label={`Select palette color: ${colorItem.name} - ${colorItem.hex}`}
+              >
+                <div
+                  className="w-12 h-12 rounded-xl border border-border/50 shadow-sm group-hover:scale-105 transition-transform"
+                  style={{ backgroundColor: colorItem.hex }}
+                />
+                <div className="text-center space-y-0.5">
+                  <p className="text-[10px] font-bold text-foreground truncate max-w-20">{colorItem.name}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono font-medium">
+                    {colorItem.hex}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
     </div>
   );
 }

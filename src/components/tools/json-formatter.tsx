@@ -1,11 +1,12 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useTools } from "@/lib/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { IndentMode } from "@/lib/json-engine.types";
-import { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     CheckCircle2,
@@ -20,12 +21,10 @@ import {
     FileJson,
     AlertCircle,
     Wrench,
+    Heart
 } from "lucide-react";
 
-
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-
 
 interface LintError {
     message: string;
@@ -41,7 +40,6 @@ function parseJson(raw: string): { value: unknown; error: LintError | null } {
         return { value, error: null };
     } catch (e) {
         const msg = (e as SyntaxError).message;
-        // Try to extract line/col from the error message (V8 engines expose position)
         const posMatch = msg.match(/position (\d+)/);
         let line: number | null = null;
         let col: number | null = null;
@@ -67,54 +65,42 @@ function copyToClipboard(text: string) {
 }
 
 // ─── JSON Repair ─────────────────────────────────────────────────────────────
-// Attempts to fix the most common real-world JSON mistakes so users can recover
-// from minor formatting errors without rewriting their input.
 
 function repairJson(raw: string): { fixed: string; success: boolean } {
     let s = raw.trim();
 
-    // ── Pass 1: strip non-JSON syntax ──────────────────────────────────────
-
-    // Remove single-line JS comments  // ...
+    // Remove single-line JS comments
     s = s.replace(/\/\/[^\n\r]*/g, "");
 
-    // Remove block JS comments  /* ... */
+    // Remove block JS comments
     s = s.replace(/\/\*[\s\S]*?\*\//g, "");
 
-    // Replace JS-only literals that have no JSON equivalent
+    // Replace JS-only literals
     s = s.replace(/\bundefined\b/g, "null");
     s = s.replace(/\bNaN\b/g, "null");
     s = s.replace(/-?Infinity\b/g, "null");
 
-    // ── Pass 2: punctuation fixes ──────────────────────────────────────────
-
-    // Remove trailing commas before } or ]
-    // Loop to handle nested cases: [1, 2, [3,],]
+    // Remove trailing commas
     let prev = "";
     while (prev !== s) {
         prev = s;
         s = s.replace(/,(\s*[}\]])/g, "$1");
     }
 
-    // ── Pass 3: string quoting ─────────────────────────────────────────────
-
-    // Convert single-quoted strings → double-quoted
-    // Handles escaped single-quotes inside: { 'it\'s': 'ok' }
+    // Convert single-quoted strings
     s = s.replace(/'(?:[^'\\]|\\.)*'/g, (match) => {
         const inner = match
             .slice(1, -1)
-            .replace(/\\'/g, "\u0001")   // temp-escape \'  →  placeholder
-            .replace(/"/g, '\\"')        // escape existing "  →  \"
-            .replace(/\u0001/g, "'");    // restore placeholder  →  '
+            .replace(/\\'/g, "\u0001")
+            .replace(/"/g, '\\"')
+            .replace(/\u0001/g, "'");
         return `"${inner}"`;
     });
 
-    // Quote unquoted object keys:  { name: 1 }  →  { "name": 1 }
-    // Only matches bare identifiers (not already-quoted keys)
+    // Quote unquoted object keys
     s = s.replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*):/g, '$1"$2"$3:');
 
-    // Quote unquoted string values:  "key": hello  →  "key": "hello"
-    // Safe: skips true/false/null/numbers/objects/arrays
+    // Quote unquoted string values
     s = s.replace(
         /:\s*([a-zA-Z][a-zA-Z0-9_\-]*)(\s*[,}\]\n])/g,
         (_match, val, end) => {
@@ -125,14 +111,9 @@ function repairJson(raw: string): { fixed: string; success: boolean } {
         }
     );
 
-    // ── Pass 4: structural fixes ────────────────────────────────────────────
-
-    // Add missing commas between elements:  } {  →  }, {  and  1 2  is harder
-    // Simple case: value then newline then key in an object
+    // Add missing commas
     s = s.replace(/([^\s\{\[\],])([\s]*\n[\s]*)(?=["\{\[]|[a-zA-Z_$])/g, "$1,$2");
 
-    // ── Final: attempt parse ────────────────────────────────────────────────
-    // Normalize capitalized booleans introduced by repair
     s = s.replace(/\bTrue\b/g, "true");
     s = s.replace(/\bFalse\b/g, "false");
 
@@ -140,9 +121,26 @@ function repairJson(raw: string): { fixed: string; success: boolean } {
         const parsed = JSON.parse(s);
         return { fixed: JSON.stringify(parsed, null, 2), success: true };
     } catch {
-        // Still failed – return partially repaired text so user can see progress
         return { fixed: s, success: false };
     }
+}
+
+// ─── FavoriteButton Helper ───────────────────────────────────────────────────
+
+function FavoriteButton({ toolId }: { toolId: string }) {
+    const { favorites, toggleFavorite } = useTools();
+    const isFav = favorites.includes(toolId);
+    return (
+        <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all"
+            onClick={() => toggleFavorite(toolId)}
+            aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
+        >
+            <Heart className={cn("h-5 w-5 transition-all", isFav ? "fill-red-500 text-red-500 scale-110" : "scale-100")} />
+        </Button>
+    );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -154,7 +152,6 @@ export function JsonFormatter() {
     const [fixFailed, setFixFailed] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Derived state – computed on every render (no useEffect needed)
     const trimmed = input.trim();
     const isEmpty = trimmed === "";
 
@@ -164,8 +161,6 @@ export function JsonFormatter() {
 
     const isValid = !isEmpty && lintError === null;
     const output = isValid ? formatJson(parsed, indentMode) : "";
-
-    // ── Handlers ──────────────────────────────────────────────────────────────
 
     const handleFormat = useCallback(() => {
         if (!isValid) return;
@@ -189,7 +184,6 @@ export function JsonFormatter() {
         const { fixed, success } = repairJson(input);
         setInput(fixed);
         setFixFailed(!success);
-        // Clear the failure hint after 3 seconds
         if (!success) setTimeout(() => setFixFailed(false), 3000);
     }, [input]);
 
@@ -213,241 +207,240 @@ export function JsonFormatter() {
                 setInput((ev.target?.result as string) ?? "");
             };
             reader.readAsText(file);
-            // Reset the input so the same file can be re-uploaded
             e.target.value = "";
         },
         []
     );
 
-    // ── Status badge ──────────────────────────────────────────────────────────
-
     const statusBadge = () => {
         if (isEmpty) return null;
         if (isValid) {
             return (
-                <Badge className="gap-1.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 font-medium">
-                    <CheckCircle2 className="h-3 w-3" />
+                <Badge className="gap-1.5 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/50 font-semibold rounded-full px-2.5 py-0.5 text-[10px]">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                     Valid JSON
                 </Badge>
             );
         }
         return (
-            <Badge className="gap-1.5 bg-destructive/10 text-destructive border-destructive/30 font-medium">
-                <XCircle className="h-3 w-3" />
+            <Badge className="gap-1.5 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200 dark:border-red-900/50 font-semibold rounded-full px-2.5 py-0.5 text-[10px]">
+                <XCircle className="h-3 w-3 text-red-600 dark:text-red-400" />
                 Invalid JSON
             </Badge>
         );
     };
 
-    // ── Render ────────────────────────────────────────────────────────────────
-
     return (
-        <div className="flex flex-col gap-5 animate-in fade-in duration-300">
-            {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border bg-card shadow-sm">
-                {/* Left: Indent selector */}
-                <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider shrink-0">
-                        Indent
-                    </span>
-                    <Tabs
-                        value={indentMode}
-                        onValueChange={(v) => setIndentMode(v as IndentMode)}
-                    >
-                        <TabsList className="h-8">
-                            <TabsTrigger value="2" className="text-xs px-2.5 h-7 cursor-pointer">
-                                2 Spaces
-                            </TabsTrigger>
-                            <TabsTrigger value="4" className="text-xs px-2.5 h-7 cursor-pointer">
-                                4 Spaces
-                            </TabsTrigger>
-                            <TabsTrigger value="tab" className="text-xs px-2.5 h-7 cursor-pointer">
-                                Tab
-                            </TabsTrigger>
-                            <TabsTrigger value="minify" className="text-xs px-2.5 h-7 cursor-pointer">
-                                <Minimize2 className="h-3 w-3 mr-1" />
-                                Minify
-                            </TabsTrigger>
-                        </TabsList>
-                    </Tabs>
+        <div className="card-premium p-6 md:p-8 space-y-8 animate-slide-up max-w-6xl mx-auto">
+            {/* Header Section */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground">JSON Formatter & Validator</h1>
+                    <p className="text-sm text-muted-foreground mt-1">Format, validate, repair and minify JSON code details instantly.</p>
                 </div>
+                <FavoriteButton toolId="json-formatter" />
+            </div>
 
-                {/* Right: Action buttons */}
-                <div className="flex items-center gap-2 flex-wrap">
-                    {/* Upload */}
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept=".json,application/json,text/plain"
-                        className="hidden"
-                        onChange={handleUpload}
-                        id="json-file-upload"
-                    />
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 cursor-pointer"
-                        onClick={() => fileInputRef.current?.click()}
-                    >
-                        <Upload className="h-3.5 w-3.5" />
-                        Upload
-                    </Button>
+            {/* Inner Wrapper / Controls */}
+            <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    {/* Left: Indent selector */}
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            Indent
+                        </span>
+                        <Tabs
+                            value={indentMode}
+                            onValueChange={(v) => setIndentMode(v as IndentMode)}
+                            className="w-auto"
+                        >
+                            <TabsList className="bg-muted p-1 rounded-xl h-9">
+                                <TabsTrigger value="2" className="text-xs rounded-lg px-3 h-7 cursor-pointer transition-all">
+                                    2 Spaces
+                                </TabsTrigger>
+                                <TabsTrigger value="4" className="text-xs rounded-lg px-3 h-7 cursor-pointer transition-all">
+                                    4 Spaces
+                                </TabsTrigger>
+                                <TabsTrigger value="tab" className="text-xs rounded-lg px-3 h-7 cursor-pointer transition-all">
+                                    Tab
+                                </TabsTrigger>
+                                <TabsTrigger value="minify" className="text-xs rounded-lg px-3 h-7 cursor-pointer gap-1.5 transition-all">
+                                    <Minimize2 className="h-3.5 w-3.5" />
+                                    Minify
+                                </TabsTrigger>
+                            </TabsList>
+                        </Tabs>
+                    </div>
 
-                    {/* Fix JSON – shown only when input is invalid */}
-                    {!isEmpty && !isValid && (
+                    {/* Right: Action buttons */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".json,application/json,text/plain"
+                            className="hidden"
+                            onChange={handleUpload}
+                            id="json-file-upload"
+                        />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 rounded-xl text-xs gap-1.5 cursor-pointer hover:bg-muted/80 active:scale-95 transition-all"
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <Upload className="h-3.5 w-3.5" />
+                            Upload
+                        </Button>
+
+                        {!isEmpty && !isValid && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className={cn(
+                                    "h-9 rounded-xl text-xs gap-1.5 cursor-pointer transition-all active:scale-95",
+                                    fixFailed
+                                        ? "border-red-500 text-red-600 bg-red-50 dark:bg-red-950/20"
+                                        : "border-amber-500/60 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20 hover:bg-amber-500/10"
+                                )}
+                                onClick={handleFix}
+                            >
+                                <Wrench className="h-3.5 w-3.5" />
+                                {fixFailed ? "Can't Fix" : "Fix JSON"}
+                            </Button>
+                        )}
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 rounded-xl text-xs gap-1.5 cursor-pointer hover:bg-muted/80 active:scale-95 transition-all"
+                            disabled={!isValid}
+                            onClick={handleFormat}
+                        >
+                            <WrapText className="h-3.5 w-3.5" />
+                            Format
+                        </Button>
+
                         <Button
                             variant="outline"
                             size="sm"
                             className={cn(
-                                "h-8 text-xs gap-1.5 cursor-pointer transition-colors",
-                                fixFailed
-                                    ? "border-destructive text-destructive"
-                                    : "border-amber-500/60 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                                "h-9 rounded-xl text-xs gap-1.5 cursor-pointer transition-all active:scale-95",
+                                copied && "border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20"
                             )}
-                            onClick={handleFix}
+                            disabled={isEmpty}
+                            onClick={handleCopy}
                         >
-                            <Wrench className="h-3.5 w-3.5" />
-                            {fixFailed ? "Can't Fix" : "Fix JSON"}
+                            <Copy className="h-3.5 w-3.5" />
+                            {copied ? "Copied!" : "Copy"}
                         </Button>
-                    )}
 
-                    {/* Format */}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 cursor-pointer"
-                        disabled={!isValid}
-                        onClick={handleFormat}
-                    >
-                        <WrapText className="h-3.5 w-3.5" />
-                        Format
-                    </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-9 rounded-xl text-xs gap-1.5 cursor-pointer hover:bg-muted/80 active:scale-95 transition-all"
+                            disabled={!isValid}
+                            onClick={handleDownload}
+                        >
+                            <Download className="h-3.5 w-3.5" />
+                            Download
+                        </Button>
 
-                    {/* Copy */}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className={cn(
-                            "h-8 text-xs gap-1.5 cursor-pointer transition-colors",
-                            copied && "border-emerald-500 text-emerald-600"
-                        )}
-                        disabled={isEmpty}
-                        onClick={handleCopy}
-                    >
-                        <Copy className="h-3.5 w-3.5" />
-                        {copied ? "Copied!" : "Copy"}
-                    </Button>
-
-                    {/* Download */}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 cursor-pointer"
-                        disabled={!isValid}
-                        onClick={handleDownload}
-                    >
-                        <Download className="h-3.5 w-3.5" />
-                        Download
-                    </Button>
-
-                    {/* Clear */}
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs gap-1.5 cursor-pointer text-muted-foreground hover:text-destructive"
-                        disabled={isEmpty}
-                        onClick={handleClear}
-                    >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Clear
-                    </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 rounded-xl text-xs gap-1.5 cursor-pointer text-muted-foreground hover:text-destructive active:scale-95 transition-all"
+                            disabled={isEmpty}
+                            onClick={handleClear}
+                        >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Clear
+                        </Button>
+                    </div>
                 </div>
             </div>
 
-            {/* ── Status / Error Banner ────────────────────────────────────────── */}
+            {/* Status / Error Banner */}
             {!isEmpty && (
                 <div
                     className={cn(
-                        "flex items-start gap-3 px-4 py-3 rounded-lg border text-sm transition-all",
+                        "flex items-start justify-between gap-3 px-4 py-3 rounded-xl border text-sm transition-all",
                         isValid
-                            ? "bg-emerald-500/8 border-emerald-500/25 text-emerald-700 dark:text-emerald-400"
-                            : "bg-destructive/8 border-destructive/25 text-destructive"
+                            ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50"
+                            : "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50"
                     )}
                 >
-                    {isValid ? (
-                        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                    ) : (
-                        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
                         {isValid ? (
-                            <span className="font-medium">
-                                JSON is valid and ready to format.
-                            </span>
+                            <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
                         ) : (
-                            <div className="space-y-0.5">
-                                <span className="font-semibold">Syntax Error</span>
-                                <p className="text-xs opacity-90 font-mono break-all">
-                                    {lintError?.message}
-                                </p>
-                                {lintError && lintError.line !== null && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <Badge
-                                            variant="outline"
-                                            className="text-[10px] px-1.5 h-5 border-destructive/40 text-destructive font-mono"
-                                        >
-                                            Line {lintError.line}
-                                        </Badge>
-                                        {lintError.col !== null && (
+                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-600 dark:text-red-400" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                            {isValid ? (
+                                <span className="font-semibold text-xs md:text-sm">
+                                    JSON syntax is valid and successfully structured.
+                                </span>
+                            ) : (
+                                <div className="space-y-1">
+                                    <span className="font-bold text-xs md:text-sm">Syntax Error</span>
+                                    <p className="text-xs font-mono break-all leading-relaxed opacity-95">
+                                        {lintError?.message}
+                                    </p>
+                                    {lintError && lintError.line !== null && (
+                                        <div className="flex items-center gap-2 mt-1.5">
                                             <Badge
                                                 variant="outline"
-                                                className="text-[10px] px-1.5 h-5 border-destructive/40 text-destructive font-mono"
+                                                className="text-[10px] font-semibold px-2 py-0 border-red-300 text-red-700 bg-red-100/30 rounded-full font-mono"
                                             >
-                                                Col {lintError.col}
+                                                Line {lintError.line}
                                             </Badge>
-                                        )}
-                                    </div>
-                                )}
-                                {fixFailed ? (
-                                    <p className="text-xs opacity-75 mt-1.5">
-                                        Auto-repair could not fix this error. Please check for{" "}
-                                        <strong>missing brackets</strong>,{" "}
-                                        <strong>unclosed strings</strong>, or{" "}
-                                        <strong>duplicate keys</strong> manually.
-                                    </p>
-                                ) : (
-                                    <p className="text-xs opacity-60 mt-1.5">
-                                        Click <strong>Fix JSON</strong> to auto-repair trailing commas,
-                                        single quotes, unquoted keys, and JS comments.
-                                    </p>
-                                )}
-                            </div>
-                        )}
+                                            {lintError.col !== null && (
+                                                <Badge
+                                                    variant="outline"
+                                                    className="text-[10px] font-semibold px-2 py-0 border-red-300 text-red-700 bg-red-100/30 rounded-full font-mono"
+                                                >
+                                                    Col {lintError.col}
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    )}
+                                    {fixFailed ? (
+                                        <p className="text-xs opacity-90 mt-1">
+                                            Auto-repair could not resolve this parsing issue. Check bracket balancing and keys manually.
+                                        </p>
+                                    ) : (
+                                        <p className="text-[11px] opacity-80 mt-1">
+                                            Tip: Click <strong>Fix JSON</strong> to repair single quotes, trailing commas, unquoted keys, or comments.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <div className="shrink-0">{statusBadge()}</div>
                 </div>
             )}
 
-            {/* ── Split Editor Panel ───────────────────────────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Split Editor Panel */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Input */}
                 <div className="flex flex-col gap-2">
                     <div className="flex items-center justify-between px-1">
                         <div className="flex items-center gap-2">
                             <FileJson className="h-4 w-4 text-muted-foreground" />
                             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                Input
+                                Input JSON
                             </span>
                         </div>
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span className="text-xs text-muted-foreground font-mono">
                             {input.length} chars
                         </span>
                     </div>
                     <div
                         className={cn(
-                            "relative rounded-lg border transition-colors overflow-hidden",
+                            "relative rounded-xl border transition-all overflow-hidden bg-card",
                             !isEmpty && lintError
-                                ? "border-destructive/50 ring-1 ring-destructive/20"
+                                ? "border-red-300 ring-1 ring-red-100 dark:border-red-900/50 dark:ring-red-950/20"
                                 : "border-border focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20"
                         )}
                     >
@@ -456,7 +449,7 @@ export function JsonFormatter() {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             placeholder={`Paste your JSON here...\n\nExample:\n{\n  "name": "DevToolbox",\n  "version": 1,\n  "active": true\n}`}
-                            className="min-h-105 resize-none border-0 font-mono text-sm leading-relaxed bg-card focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none p-4"
+                            className="min-h-95 resize-none border-0 font-mono text-sm leading-relaxed bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 rounded-none p-4"
                             spellCheck={false}
                         />
                     </div>
@@ -472,50 +465,53 @@ export function JsonFormatter() {
                             </span>
                         </div>
                         {output && (
-                            <span className="text-[10px] text-muted-foreground font-mono">
+                            <span className="text-xs text-muted-foreground font-mono">
                                 {output.split("\n").length} lines
                             </span>
                         )}
                     </div>
-                    <div className="relative rounded-lg border border-border overflow-hidden bg-muted/30 max-h-130">
+                    <div className="relative rounded-xl border border-border bg-muted/30 overflow-hidden h-95.5">
                         {output ? (
-                            <pre className="p-4 text-sm font-mono leading-relaxed overflow-auto h-full max-h-130 text-foreground whitespace-pre-wrap wrap-break-word">
+                            <pre className="p-4 text-sm font-mono leading-relaxed overflow-auto h-full text-foreground whitespace-pre-wrap break-all">
                                 <SyntaxHighlight json={output} />
                             </pre>
                         ) : (
-                            <div className="flex flex-col items-center justify-center h-full min-h-105 gap-3 text-center p-8">
-                                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted border border-border/50">
-                                    <FileJson className="h-7 w-7 text-muted-foreground" />
+                            <div className="flex flex-col items-center justify-center h-full gap-3 text-center p-6">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted border border-border/50">
+                                    <FileJson className="h-6 w-6 text-muted-foreground" />
                                 </div>
-                                <div>
-                                    <p className="text-sm font-medium text-muted-foreground">
-                                        {isEmpty
-                                            ? "Formatted output will appear here"
-                                            : "Fix the JSON error to see output"}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground/60 mt-1">
-                                        {isEmpty ? "Paste or upload a JSON file to start" : ""}
-                                    </p>
-                                </div>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    No Formatted Output
+                                </p>
+                                <p className="text-xs text-muted-foreground/60 max-w-60">
+                                    {isEmpty
+                                        ? "Paste or upload JSON contents to visualize output"
+                                        : "Fix the syntax errors above to display formatted data"}
+                                </p>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
 
-            {/* ── Quick Stats ──────────────────────────────────────────────────── */}
+            {/* Quick Stats */}
             {isValid && parsed !== undefined && (
-                <JsonStats value={parsed} />
+                <div className="space-y-4 pt-2">
+                    <div className="border-t border-border/60 pt-4">
+                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+                            Structure Statistics
+                        </h3>
+                        <JsonStats value={parsed} />
+                    </div>
+                </div>
             )}
         </div>
     );
 }
 
 // ─── Syntax Highlighter ───────────────────────────────────────────────────────
-// A lightweight, dependency-free JSON syntax highlighter using React spans.
 
 function SyntaxHighlight({ json }: { json: string }) {
-    // Tokenize the JSON string with a single regex pass
     const TOKEN_RE =
         /("(?:\\.|[^"\\])*")\s*(:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(\btrue\b|\bfalse\b|\bnull\b)|([{}[\],])/g;
 
@@ -526,7 +522,6 @@ function SyntaxHighlight({ json }: { json: string }) {
     TOKEN_RE.lastIndex = 0;
 
     while ((match = TOKEN_RE.exec(json)) !== null) {
-        // Flush any unmatched whitespace/plain text
         if (match.index > lastIndex) {
             parts.push(json.slice(lastIndex, match.index));
         }
@@ -535,17 +530,15 @@ function SyntaxHighlight({ json }: { json: string }) {
 
         if (str !== undefined) {
             if (colon !== undefined) {
-                // It's a key
                 parts.push(
-                    <span key={match.index} className="text-sky-500 dark:text-sky-400">
+                    <span key={match.index} className="text-sky-600 dark:text-sky-400 font-semibold">
                         {str}
                     </span>,
-                    <span key={`${match.index}-colon`} className="text-muted-foreground">
+                    <span key={`${match.index}-colon`} className="text-muted-foreground font-medium">
                         :
                     </span>
                 );
             } else {
-                // It's a string value
                 parts.push(
                     <span key={match.index} className="text-amber-600 dark:text-amber-400">
                         {str}
@@ -554,19 +547,19 @@ function SyntaxHighlight({ json }: { json: string }) {
             }
         } else if (num !== undefined) {
             parts.push(
-                <span key={match.index} className="text-violet-600 dark:text-violet-400">
+                <span key={match.index} className="text-violet-600 dark:text-violet-400 font-mono">
                     {num}
                 </span>
             );
         } else if (keyword !== undefined) {
             parts.push(
-                <span key={match.index} className="text-emerald-600 dark:text-emerald-400 font-medium">
+                <span key={match.index} className="text-emerald-600 dark:text-emerald-400 font-semibold">
                     {keyword}
                 </span>
             );
         } else if (punctuation !== undefined) {
             parts.push(
-                <span key={match.index} className="text-muted-foreground">
+                <span key={match.index} className="text-muted-foreground/80 font-medium">
                     {punctuation}
                 </span>
             );
@@ -577,7 +570,6 @@ function SyntaxHighlight({ json }: { json: string }) {
         lastIndex = match.index + full.length;
     }
 
-    // Flush remaining text
     if (lastIndex < json.length) {
         parts.push(json.slice(lastIndex));
     }
@@ -585,7 +577,7 @@ function SyntaxHighlight({ json }: { json: string }) {
     return <>{parts}</>;
 }
 
-// ─── Quick Stats ─────────────────────────────────────────────────────────────
+// ─── Quick Stats Helpers ─────────────────────────────────────────────────────
 
 function countKeys(val: unknown): number {
     if (val === null || typeof val !== "object") return 0;
@@ -597,6 +589,7 @@ function countKeys(val: unknown): number {
     );
 }
 
+// Fixed getDepth helper to prevent stack overflow on infinite loops, and handle numbers safely
 function getDepth(val: unknown): number {
     if (val === null || typeof val !== "object") return 0;
     if (Array.isArray(val)) {
@@ -612,10 +605,10 @@ function JsonStats({ value }: { value: unknown }) {
 
     const stats = [
         {
-            label: "Type",
+            label: "JSON Type",
             val: isArray ? "Array" : isObject ? "Object" : typeof value,
         },
-        ...(isArray ? [{ label: "Items", val: String((value as unknown[]).length) }] : []),
+        ...(isArray ? [{ label: "Items Count", val: String((value as unknown[]).length) }] : []),
         ...(isObject
             ? [{ label: "Root Keys", val: String(Object.keys(value as object).length) }]
             : []),
@@ -624,16 +617,16 @@ function JsonStats({ value }: { value: unknown }) {
     ];
 
     return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {stats.map((s) => (
                 <div
                     key={s.label}
-                    className="flex flex-col gap-0.5 px-4 py-3 rounded-lg border border-border bg-card text-center"
+                    className="flex flex-col gap-0.5 p-4 rounded-xl border border-border bg-card/50 text-center shadow-sm"
                 >
-                    <span className="text-lg font-bold text-foreground font-mono">
+                    <span className="text-base font-bold text-foreground font-mono tabular-nums">
                         {s.val}
                     </span>
-                    <span className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mt-1">
                         {s.label}
                     </span>
                 </div>

@@ -2,10 +2,11 @@
 
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useTools } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import {
   Select,
   SelectContent,
@@ -21,6 +22,7 @@ import {
   Play,
   AlertCircle,
   RefreshCw,
+  Heart
 } from "lucide-react";
 
 // ─── Constants & Date Helpers ─────────────────────────────────────────────────
@@ -33,8 +35,6 @@ function isLeapYear(year: number): boolean {
 }
 
 function detectUnit(val: number): "seconds" | "milliseconds" {
-  // Over 3e10 in seconds is Oct 13, 2920. In milliseconds, it's Dec 13, 1970.
-  // So absolute value >= 3e10 is the industry standard for milliseconds threshold.
   return Math.abs(val) >= 3e10 ? "milliseconds" : "seconds";
 }
 
@@ -73,6 +73,24 @@ function getRelativeTime(timestampMs: number): string {
   } else {
     return format(Math.round(diff / msPerYear), "year");
   }
+}
+
+// ─── FavoriteButton Helper ───────────────────────────────────────────────────
+
+function FavoriteButton({ toolId }: { toolId: string }) {
+  const { favorites, toggleFavorite } = useTools();
+  const isFav = favorites.includes(toolId);
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-9 w-9 rounded-full text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 active:scale-95 transition-all"
+      onClick={() => toggleFavorite(toolId)}
+      aria-label={isFav ? "Remove from favorites" : "Add to favorites"}
+    >
+      <Heart className={cn("h-5 w-5 transition-all", isFav ? "fill-red-500 text-red-500 scale-110" : "scale-100")} />
+    </Button>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -126,7 +144,7 @@ export function TimestampTool() {
       const isNumeric = /^-?\d+(\.\d+)?$/.test(trimmedEpoch);
       if (!isNumeric) {
         epochError =
-          "Invalid character: Epoch must be a numeric value (e.g. digits only, optionally starting with a minus sign).";
+          "Invalid input: Unix timestamp must be numeric.";
       } else {
         const numVal = parseFloat(trimmedEpoch);
         const unit = epochUnit === "auto" ? detectUnit(numVal) : epochUnit;
@@ -137,12 +155,12 @@ export function TimestampTool() {
 
         if (msVal < MIN_SAFE_MS || msVal > MAX_SAFE_MS) {
           epochError =
-            "Out of range: Unix Epoch limits exceeded (Supported range: ±100,000,000 days from Jan 1, 1970).";
+            "Out of range: Built-in Date limits exceeded (±100,000,000 days from epoch).";
         } else {
           const dateObj = new Date(msVal);
           if (isNaN(dateObj.getTime())) {
             epochError =
-              "Parse error: Internal JavaScript date validation failed.";
+              "Parse error: Unable to create valid date from parts.";
           } else {
             epochUtcStr = dateObj.toUTCString();
             epochLocalStr = `${dateObj.toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`;
@@ -261,15 +279,13 @@ export function TimestampTool() {
     [dateParts],
   );
 
-  // ─── Handlers ──────────────────────────────────────────────────────────────
-
   const handleUseCurrent = useCallback(() => {
     const isMs =
       epochUnit === "milliseconds" ||
       (epochUnit === "auto" && detectUnit(liveTime) === "milliseconds");
     const val = isMs ? String(liveTime) : String(Math.floor(liveTime / 1000));
     setEpochInput(val);
-    toast.success("Current time loaded into Epoch Converter");
+    toast.success("Loaded current system epoch timestamp");
   }, [epochUnit, liveTime]);
 
   const handleDatePickerChange = (val: string) => {
@@ -308,7 +324,7 @@ export function TimestampTool() {
       .catch(() => toast.error(`Failed to copy ${label}`));
   };
 
-  // ─── Keyboard Shortcuts Listener ───────────────────────────────────────────
+  // Keyboard Shortcuts Listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey) {
@@ -332,92 +348,94 @@ export function TimestampTool() {
   }, [handleUseCurrent]);
 
   return (
-    <div className="flex flex-col gap-6 p-6 bg-card rounded-xl border border-border shadow-sm max-w-6xl mx-auto animate-in fade-in duration-300">
+    <div className="card-premium p-6 md:p-8 space-y-8 animate-slide-up max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Timestamp Converter</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Convert Unix epoch timestamps to human-readable dates, relative times, and vice versa.
+          </p>
+        </div>
+        <FavoriteButton toolId="timestamp-tool" />
+      </div>
+
       {/* Live Clock Card Dashboard */}
-      <div className="relative overflow-hidden p-6 rounded-xl bg-muted/40 border border-border flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
-          <Clock className="size-48" />
+      <div className="relative overflow-hidden p-5 rounded-2xl bg-muted/40 border border-border/50 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="absolute top-0 right-0 p-4 opacity-[0.03] pointer-events-none">
+          <Clock className="size-44" />
         </div>
 
-        <div className="flex flex-col gap-1 w-full md:w-auto">
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+        <div className="flex flex-col gap-1 w-full md:w-auto relative">
+          <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
             <span
               className={cn(
                 "size-2 rounded-full",
-                isClockRunning ? "bg-emerald-500 animate-pulse" : "bg-muted",
+                isClockRunning ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/30",
               )}
             />
             Live System Clock
           </h4>
           <div className="flex flex-col sm:flex-row items-baseline gap-x-4 gap-y-1 mt-1">
-            <span className="text-2xl font-mono font-bold text-foreground">
+            <span className="text-2xl font-mono font-bold text-foreground tracking-tight tabular-nums">
               {Math.floor(liveTime / 1000)}
             </span>
             <span className="text-xs text-muted-foreground font-mono">
               .{String(liveTime % 1000).padStart(3, "0")} seconds
             </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            UTC: {new Date(liveTime).toUTCString()}
+          <p className="text-[11px] text-muted-foreground mt-1 font-semibold truncate max-w-xs md:max-w-md">
+            GMT / UTC: {new Date(liveTime).toUTCString()}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Local: {new Date(liveTime).toString().split(" (")[0]}
+          <p className="text-[11px] text-muted-foreground font-semibold truncate max-w-xs md:max-w-md">
+            Local time: {new Date(liveTime).toString().split(" (")[0]}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto justify-end relative">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setIsClockRunning((p) => !p)}
-            className="cursor-pointer"
-            aria-label={
-              isClockRunning ? "Pause live clock" : "Resume live clock"
-            }
+            className="h-9 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
+            aria-label={isClockRunning ? "Pause live clock" : "Resume live clock"}
           >
             {isClockRunning ? (
               <>
-                <Pause className="size-3.5 mr-1" />
-                Pause
+                <Pause className="size-3.5" />
+                Pause Clock
               </>
             ) : (
               <>
-                <Play className="size-3.5 mr-1" />
-                Resume
+                <Play className="size-3.5" />
+                Resume Clock
               </>
             )}
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              handleCopyText(
-                String(Math.floor(liveTime / 1000)),
-                "Unix timestamp",
-              )
-            }
-            className="cursor-pointer"
+            onClick={() => handleCopyText(String(Math.floor(liveTime / 1000)), "Unix timestamp")}
+            className="h-9 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
             aria-label="Copy live unix timestamp in seconds"
           >
-            <Copy className="size-3.5 mr-1" />
+            <Copy className="size-3.5" />
             Copy Sec
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              handleCopyText(String(liveTime), "Milliseconds timestamp")
-            }
-            className="cursor-pointer"
+            onClick={() => handleCopyText(String(liveTime), "Milliseconds timestamp")}
+            className="h-9 rounded-xl text-xs gap-1.5 hover:bg-card cursor-pointer active:scale-95 transition-all"
             aria-label="Copy live unix timestamp in milliseconds"
           >
-            <Copy className="size-3.5 mr-1" />
+            <Copy className="size-3.5" />
             Copy MS
           </Button>
           <Button
             onClick={handleUseCurrent}
             size="sm"
-            className="cursor-pointer"
+            className="h-9 rounded-full text-xs font-semibold cursor-pointer active:scale-95 transition-all shadow-sm"
             aria-label="Load current timestamp into converter"
           >
             <RefreshCw className="size-3.5 mr-1" />
@@ -429,35 +447,32 @@ export function TimestampTool() {
       {/* Main Conversion Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* LEFT COLUMN: Epoch to Date */}
-        <div className="flex flex-col gap-4 p-5 rounded-xl border border-border bg-card shadow-inner">
-          <div>
-            <h3 className="font-semibold text-lg flex items-center gap-2">
-              <span className="p-1 rounded-md bg-primary/10 text-primary">
-                <Clock className="size-4" />
-              </span>
+        <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4 flex flex-col justify-between">
+          <div className="space-y-1">
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
+              <Clock className="size-4 text-muted-foreground" />
               Unix Epoch &rarr; Date
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Translate unix timestamp values to UTC, local time, and relative
-              strings.
+            <p className="text-xs text-muted-foreground">
+              Translate unix timestamps into UTC, local dates, and relative scopes.
             </p>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="space-y-4">
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="epoch-val-input"
-                className="text-xs font-semibold text-muted-foreground uppercase"
+                className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider"
               >
-                Unix Timestamp
+                Unix Timestamp Input
               </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2.5">
                 <Input
                   id="epoch-val-input"
                   placeholder="e.g. 1719662400"
                   value={epochInput}
                   onChange={(e) => setEpochInput(e.target.value)}
-                  className="font-mono text-sm h-9 flex-1"
+                  className="font-mono text-sm h-10 rounded-xl"
                 />
                 <Select
                   value={epochUnit}
@@ -465,40 +480,34 @@ export function TimestampTool() {
                     setEpochUnit(value as "auto" | "seconds" | "milliseconds")
                   }
                 >
-                  <SelectTrigger className="w-35 h-9">
+                  <SelectTrigger className="w-36 h-10 rounded-xl bg-card">
                     <SelectValue />
                   </SelectTrigger>
-
-                  <SelectContent>
+                  <SelectContent className="rounded-xl">
                     <SelectItem value="auto">Auto Detect</SelectItem>
                     <SelectItem value="seconds">Seconds (s)</SelectItem>
-                    <SelectItem value="milliseconds">
-                      Milliseconds (ms)
-                    </SelectItem>
+                    <SelectItem value="milliseconds">Milliseconds (ms)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               {epochInput && !epochError && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
-                  <span>Detected Unit:</span>
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] py-0 px-1.5 font-mono"
-                  >
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1.5 pl-0.5">
+                  <span>Unit detected:</span>
+                  <Badge variant="outline" className="text-[9px] font-mono font-bold px-2 py-0 rounded-full border-border bg-card">
                     {activeUnitText}
                   </Badge>
                   {epochIsLeap !== null && (
                     <>
-                      <span className="mx-1">•</span>
+                      <span>•</span>
                       <span>Leap Year:</span>
                       <Badge
-                        variant="secondary"
+                        variant="outline"
                         className={cn(
-                          "text-[10px] py-0 px-1.5",
+                          "text-[9px] font-bold px-2 py-0 rounded-full",
                           epochIsLeap
-                            ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-emerald-500/20"
-                            : "bg-muted text-muted-foreground",
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-muted text-muted-foreground border-border",
                         )}
                       >
                         {epochIsLeap ? "Yes" : "No"}
@@ -511,23 +520,23 @@ export function TimestampTool() {
 
             {/* Error Notification */}
             {epochError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg flex items-start gap-2 animate-in fade-in">
-                <AlertCircle className="size-4 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2.5 p-3 rounded-xl border text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50 animate-scale-in">
+                <AlertCircle className="size-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
                 <span>{epochError}</span>
               </div>
             )}
 
             {/* Conversions Output fields */}
-            <div className="flex flex-col gap-2.5 mt-2">
+            <div className="space-y-3.5 pt-2 border-t border-border/40">
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    GMT / UTC Time
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    GMT / UTC Date
                   </span>
                   {epochUtcStr && (
                     <button
                       onClick={() => handleCopyText(epochUtcStr, "UTC Date")}
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy UTC string"
                     >
                       <Copy className="size-3" />
@@ -537,23 +546,21 @@ export function TimestampTool() {
                 </div>
                 <Input
                   readOnly
-                  placeholder="GMT date output"
+                  placeholder="GMT / UTC timezone output date"
                   value={epochUtcStr}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    Local timezone time
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Local Timezone Date
                   </span>
                   {epochLocalStr && (
                     <button
-                      onClick={() =>
-                        handleCopyText(epochLocalStr, "Local Date")
-                      }
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      onClick={() => handleCopyText(epochLocalStr, "Local Date")}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy Local Date string"
                     >
                       <Copy className="size-3" />
@@ -563,21 +570,21 @@ export function TimestampTool() {
                 </div>
                 <Input
                   readOnly
-                  placeholder="Local date output"
+                  placeholder="Local timezone output date"
                   value={epochLocalStr}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    ISO 8601
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    ISO 8601 Format
                   </span>
                   {epochIsoStr && (
                     <button
                       onClick={() => handleCopyText(epochIsoStr, "ISO Date")}
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy ISO 8601 string"
                     >
                       <Copy className="size-3" />
@@ -587,23 +594,21 @@ export function TimestampTool() {
                 </div>
                 <Input
                   readOnly
-                  placeholder="ISO 8601 date string"
+                  placeholder="ISO 8601 formatting"
                   value={epochIsoStr}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    Relative Time
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Relative Time Diff
                   </span>
                   {epochRelativeStr && (
                     <button
-                      onClick={() =>
-                        handleCopyText(epochRelativeStr, "Relative Date")
-                      }
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      onClick={() => handleCopyText(epochRelativeStr, "Relative Date")}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy Relative Time description"
                     >
                       <Copy className="size-3" />
@@ -613,9 +618,9 @@ export function TimestampTool() {
                 </div>
                 <Input
                   readOnly
-                  placeholder="Relative date description"
+                  placeholder="Relative distance description"
                   value={epochRelativeStr}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
             </div>
@@ -623,29 +628,26 @@ export function TimestampTool() {
         </div>
 
         {/* RIGHT COLUMN: Date to Epoch */}
-        <div className="flex flex-col gap-4 p-5 rounded-xl border border-border bg-card shadow-inner">
-          <div>
-            <h3 className="font-semibold text-lg flex items-center gap-2">
-              <span className="p-1 rounded-md bg-primary/10 text-primary">
-                <Calendar className="size-4" />
-              </span>
+        <div className="rounded-2xl border border-border/40 bg-muted/30 p-5 space-y-4 flex flex-col justify-between">
+          <div className="space-y-1">
+            <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
+              <Calendar className="size-4 text-muted-foreground" />
               Date &rarr; Unix Epoch
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Enter discrete date properties or select via picker to fetch
-              timestamps.
+            <p className="text-xs text-muted-foreground">
+              Deconstruct dates into epochs and timestamps using local or UTC timezone.
             </p>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="space-y-4">
             {/* Timezone and Picker */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
                 <label
                   htmlFor="calendar-picker-input"
-                  className="text-xs font-semibold text-muted-foreground uppercase"
+                  className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider"
                 >
-                  Calendar Picker
+                  Calendar DateTime Picker
                 </label>
                 <Input
                   id="calendar-picker-input"
@@ -653,16 +655,16 @@ export function TimestampTool() {
                   value={pickerValue}
                   step="1"
                   onChange={(e) => handleDatePickerChange(e.target.value)}
-                  className="text-sm h-9 bg-background"
+                  className="text-xs h-10 bg-card rounded-xl border border-border"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
                 <label
                   htmlFor="timezone-scope-select"
-                  className="text-xs font-semibold text-muted-foreground uppercase"
+                  className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider"
                 >
-                  Timezone interpretation
+                  Timezone Scope
                 </label>
                 <Select
                   value={targetTimezone}
@@ -672,21 +674,17 @@ export function TimestampTool() {
                 >
                   <SelectTrigger
                     id="timezone-scope-select"
-                    className="w-full h-9"
+                    className="w-full h-10 rounded-xl bg-card border border-border"
                     aria-label="Select target timezone interpreter"
                   >
                     <SelectValue />
                   </SelectTrigger>
-
-                  <SelectContent>
+                  <SelectContent className="rounded-xl">
                     <SelectItem value="local">
-                      Local Time (
+                      Local (
                       {Intl.DateTimeFormat().resolvedOptions().timeZone})
                     </SelectItem>
-
-                    <SelectItem value="utc">
-                      Coordinated Universal Time (UTC)
-                    </SelectItem>
+                    <SelectItem value="utc">UTC timezone</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -695,60 +693,18 @@ export function TimestampTool() {
             {/* Individual numeric inputs */}
             <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 mt-1">
               {[
-                {
-                  label: "Year",
-                  field: "year",
-                  min: -9999,
-                  max: 99999,
-                  placeholder: "YYYY",
-                },
-                {
-                  label: "Month",
-                  field: "month",
-                  min: 1,
-                  max: 12,
-                  placeholder: "MM",
-                },
-                {
-                  label: "Day",
-                  field: "day",
-                  min: 1,
-                  max: 31,
-                  placeholder: "DD",
-                },
-                {
-                  label: "Hour",
-                  field: "hour",
-                  min: 0,
-                  max: 23,
-                  placeholder: "Hr",
-                },
-                {
-                  label: "Min",
-                  field: "minute",
-                  min: 0,
-                  max: 59,
-                  placeholder: "Mn",
-                },
-                {
-                  label: "Sec",
-                  field: "second",
-                  min: 0,
-                  max: 59,
-                  placeholder: "Sc",
-                },
-                {
-                  label: "MS",
-                  field: "millisecond",
-                  min: 0,
-                  max: 999,
-                  placeholder: "Ms",
-                },
+                { label: "Year", field: "year", min: -9999, max: 99999, placeholder: "YYYY" },
+                { label: "Month", field: "month", min: 1, max: 12, placeholder: "MM" },
+                { label: "Day", field: "day", min: 1, max: 31, placeholder: "DD" },
+                { label: "Hour", field: "hour", min: 0, max: 23, placeholder: "Hr" },
+                { label: "Min", field: "minute", min: 0, max: 59, placeholder: "Mn" },
+                { label: "Sec", field: "second", min: 0, max: 59, placeholder: "Sc" },
+                { label: "MS", field: "millisecond", min: 0, max: 999, placeholder: "Ms" },
               ].map((inp) => (
                 <div key={inp.field} className="flex flex-col gap-1">
                   <label
                     htmlFor={`date-part-${inp.field}`}
-                    className="text-[10px] font-bold text-muted-foreground text-center uppercase"
+                    className="text-[9px] font-bold text-muted-foreground text-center uppercase tracking-wider"
                   >
                     {inp.label}
                   </label>
@@ -765,22 +721,22 @@ export function TimestampTool() {
                         e.target.value,
                       )
                     }
-                    className="text-center font-mono text-xs p-1 h-7 rounded-md [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="text-center font-mono text-xs p-1 h-8 rounded-xl bg-card border-border [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               ))}
             </div>
 
             {/* Leap year check details */}
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1.5 pl-0.5">
               <span>Selected Year Leap Status:</span>
               <Badge
-                variant="secondary"
+                variant="outline"
                 className={cn(
-                  "text-[10px] py-0 px-1.5",
+                  "text-[9px] font-bold px-2 py-0 rounded-full",
                   dateIsLeap
-                    ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/10 border-emerald-500/20"
-                    : "bg-muted text-muted-foreground",
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-muted text-muted-foreground border-border",
                 )}
               >
                 {dateIsLeap ? "Leap Year" : "Normal Year"}
@@ -789,25 +745,23 @@ export function TimestampTool() {
 
             {/* Validation Errors */}
             {dateError && (
-              <div className="p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg flex items-start gap-2 animate-in fade-in">
-                <AlertCircle className="size-4 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2.5 p-3 rounded-xl border text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-900/50 animate-scale-in">
+                <AlertCircle className="size-4 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
                 <span>{dateError}</span>
               </div>
             )}
 
             {/* Result Epochs outputs */}
-            <div className="flex flex-col gap-2.5 mt-2">
+            <div className="space-y-3.5 pt-2 border-t border-border/40">
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    Epoch seconds
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Epoch Seconds (s)
                   </span>
                   {dateEpochSeconds && (
                     <button
-                      onClick={() =>
-                        handleCopyText(dateEpochSeconds, "Epoch seconds")
-                      }
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      onClick={() => handleCopyText(dateEpochSeconds, "Epoch seconds")}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy Epoch seconds"
                     >
                       <Copy className="size-3" />
@@ -819,24 +773,19 @@ export function TimestampTool() {
                   readOnly
                   placeholder="Epoch seconds output"
                   value={dateEpochSeconds}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    Epoch milliseconds
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Epoch Milliseconds (ms)
                   </span>
                   {dateEpochMilliseconds && (
                     <button
-                      onClick={() =>
-                        handleCopyText(
-                          dateEpochMilliseconds,
-                          "Epoch milliseconds",
-                        )
-                      }
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      onClick={() => handleCopyText(dateEpochMilliseconds, "Epoch milliseconds")}
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy Epoch milliseconds"
                     >
                       <Copy className="size-3" />
@@ -848,19 +797,19 @@ export function TimestampTool() {
                   readOnly
                   placeholder="Epoch milliseconds output"
                   value={dateEpochMilliseconds}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] font-bold text-muted-foreground uppercase">
-                    Formatted ISO 8601
+                <div className="flex justify-between items-center px-0.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    ISO 8601 Equivalent
                   </span>
                   {dateIsoStr && (
                     <button
                       onClick={() => handleCopyText(dateIsoStr, "ISO date")}
-                      className="text-[10px] font-medium text-primary hover:underline flex items-center gap-1"
+                      className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                       aria-label="Copy ISO 8601 date string"
                     >
                       <Copy className="size-3" />
@@ -870,9 +819,9 @@ export function TimestampTool() {
                 </div>
                 <Input
                   readOnly
-                  placeholder="ISO 8601 date output"
+                  placeholder="ISO 8601 formatting equivalent"
                   value={dateIsoStr}
-                  className="font-mono text-xs bg-muted/20 cursor-default h-8 focus-visible:ring-0"
+                  className="font-mono text-xs bg-card/65 cursor-default h-9 focus-visible:ring-0 rounded-xl"
                 />
               </div>
             </div>
@@ -881,21 +830,21 @@ export function TimestampTool() {
       </div>
 
       {/* Keyboard Shortcuts Helper Panel */}
-      <div className="text-[11px] text-muted-foreground flex flex-wrap gap-x-4 gap-y-1.5 justify-center sm:justify-start border-t border-border pt-4">
-        <span className="font-semibold text-foreground">
-          Keyboard Shortcuts:
+      <div className="text-[11px] font-semibold text-muted-foreground flex flex-wrap gap-x-6 gap-y-2 justify-center sm:justify-start border-t border-border/50 pt-5">
+        <span className="text-foreground uppercase tracking-wider text-[10px] font-bold">
+          Keyboard Shortcuts
         </span>
-        <span className="flex items-center gap-1">
-          <kbd className="bg-muted px-1.5 py-0.5 rounded border border-border font-mono shadow-sm">
+        <span className="flex items-center gap-2">
+          <kbd className="bg-muted px-2 py-0.5 rounded-lg border border-border font-mono shadow-sm text-foreground text-[10px] font-bold">
             Alt + U
-          </kbd>{" "}
-          Load current system time into converter
+          </kbd>
+          <span>Use current system timestamp</span>
         </span>
-        <span className="flex items-center gap-1">
-          <kbd className="bg-muted px-1.5 py-0.5 rounded border border-border font-mono shadow-sm">
+        <span className="flex items-center gap-2">
+          <kbd className="bg-muted px-2 py-0.5 rounded-lg border border-border font-mono shadow-sm text-foreground text-[10px] font-bold">
             Alt + P
-          </kbd>{" "}
-          Toggle Live System Clock Play/Pause
+          </kbd>
+          <span>Toggle live system clock</span>
         </span>
       </div>
     </div>
