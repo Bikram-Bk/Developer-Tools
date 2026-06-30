@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🛠️ Developer Toolbox
 
-## Getting Started
+A polished, client-side collection of essential developer utilities for formatting, encoding, hashing, and transforming data.
 
-First, run the development server:
+## Features
+
+- ⚡ Fast, browser-based tools with no backend required
+- 🔐 Local-first workflow for better privacy and data safety
+- 🧪 Includes JSON, URL, Base64, UUID, Regex, JWT, and hash tools
+- 🎨 Clean, modern interface with dark/light theme support
+- 📚 Built for quick daily tasks with a searchable dashboard
+
+## Get Started
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```text
+src/
+  app/
+  components/
+    tools/
+    ui/
+  lib/
+public/
+```
 
-## Learn More
+## Technology Stack
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js 16.2.9
+- React 19.2.4
+- TypeScript 5
+- Tailwind CSS 4
+- shadcn/ui style components
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Environment Variables
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+No environment variables are required for local development.
 
-## Deploy on Vercel
+## Contributing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Contributions are welcome. Please fork the repository, create a feature branch, and submit a pull request with a clear summary of your changes.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## License & Contact
+
+- License: Not yet specified. Add a LICENSE file if you plan to distribute or publish the project.
+- Contact: Open an issue for questions, feedback, or feature requests.
